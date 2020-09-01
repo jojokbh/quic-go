@@ -7,8 +7,8 @@ import (
 	"crypto/rand"
 	"fmt"
 
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/qtls"
+	"github.com/jojokbh/quic-go/internal/protocol"
+	"github.com/jojokbh/quic-go/internal/qtls"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"

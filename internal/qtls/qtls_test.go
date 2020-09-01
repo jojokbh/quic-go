@@ -8,7 +8,7 @@ import (
 	"net"
 	"unsafe"
 
-	mocktls "github.com/lucas-clemente/quic-go/internal/mocks/tls"
+	mocktls "github.com/jojokbh/quic-go/internal/mocks/tls"
 
 	"github.com/marten-seemann/qtls"
 

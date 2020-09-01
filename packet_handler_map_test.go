@@ -7,11 +7,11 @@ import (
 	"net"
 	"time"
 
-	"github.com/lucas-clemente/quic-go/internal/mocks"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/utils"
-	"github.com/lucas-clemente/quic-go/internal/wire"
-	"github.com/lucas-clemente/quic-go/logging"
+	"github.com/jojokbh/quic-go/internal/mocks"
+	"github.com/jojokbh/quic-go/internal/protocol"
+	"github.com/jojokbh/quic-go/internal/utils"
+	"github.com/jojokbh/quic-go/internal/wire"
+	"github.com/jojokbh/quic-go/logging"
 
 	"github.com/golang/mock/gomock"
 

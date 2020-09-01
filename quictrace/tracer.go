@@ -6,9 +6,9 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/wire"
-	"github.com/lucas-clemente/quic-go/quictrace/pb"
+	"github.com/jojokbh/quic-go/internal/protocol"
+	"github.com/jojokbh/quic-go/internal/wire"
+	"github.com/jojokbh/quic-go/quictrace/pb"
 )
 
 type traceEvent struct {

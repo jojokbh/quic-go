@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/lucas-clemente/quic-go"
-	mockquic "github.com/lucas-clemente/quic-go/internal/mocks/quic"
-	"github.com/lucas-clemente/quic-go/internal/testdata"
-	"github.com/lucas-clemente/quic-go/internal/utils"
+	"github.com/jojokbh/quic-go"
+	mockquic "github.com/jojokbh/quic-go/internal/mocks/quic"
+	"github.com/jojokbh/quic-go/internal/testdata"
+	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/marten-seemann/qpack"
 
 	. "github.com/onsi/ginkgo"

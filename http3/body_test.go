@@ -6,8 +6,8 @@ import (
 	"io"
 
 	"github.com/golang/mock/gomock"
-	"github.com/lucas-clemente/quic-go"
-	mockquic "github.com/lucas-clemente/quic-go/internal/mocks/quic"
+	"github.com/jojokbh/quic-go"
+	mockquic "github.com/jojokbh/quic-go/internal/mocks/quic"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"

@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/qerr"
-	"github.com/lucas-clemente/quic-go/logging"
+	"github.com/jojokbh/quic-go/internal/protocol"
+	"github.com/jojokbh/quic-go/internal/qerr"
+	"github.com/jojokbh/quic-go/logging"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"

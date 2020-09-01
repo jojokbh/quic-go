@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	mrand "math/rand"
 
-	"github.com/lucas-clemente/quic-go/internal/qtls"
+	"github.com/jojokbh/quic-go/internal/qtls"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"

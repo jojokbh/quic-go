@@ -14,8 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/internal/utils"
+	"github.com/jojokbh/quic-go"
+	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/marten-seemann/qpack"
 )
 
@@ -59,7 +59,8 @@ func newConnError(code errorCode, err error) requestError {
 
 // Server is a HTTP2 server listening for QUIC connections.
 type Server struct {
-	*http.Server
+	uniCast *http.Server
+	multiCast *http.Server
 
 	// By providing a quic.Config, it is possible to set parameters of the QUIC connection.
 	// If nil, it uses reasonable default values.
@@ -77,10 +78,10 @@ type Server struct {
 
 // ListenAndServe listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
 func (s *Server) ListenAndServe() error {
-	if s.Server == nil {
+	if s.uniCast == nil {
 		return errors.New("use of http3.Server without http.Server")
 	}
-	return s.serveImpl(s.TLSConfig, nil)
+	return s.serveImpl(s.uniCast.TLSConfig, nil)
 }
 
 // ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
@@ -103,14 +104,14 @@ func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
 // It is possible to reuse the same connection for outgoing connections.
 // Closing the server does not close the packet conn.
 func (s *Server) Serve(conn net.PacketConn) error {
-	return s.serveImpl(s.TLSConfig, conn)
+	return s.serveImpl(s.uniCast.TLSConfig, conn)
 }
 
 func (s *Server) serveImpl(tlsConf *tls.Config, conn net.PacketConn) error {
 	if s.closed.Get() {
 		return http.ErrServerClosed
 	}
-	if s.Server == nil {
+	if s.uniCast == nil {
 		return errors.New("use of http3.Server without http.Server")
 	}
 	s.loggerOnce.Do(func() {
@@ -140,7 +141,7 @@ func (s *Server) serveImpl(tlsConf *tls.Config, conn net.PacketConn) error {
 	var ln quic.EarlyListener
 	var err error
 	if conn == nil {
-		ln, err = quicListenAddr(s.Addr, tlsConf, s.QuicConfig)
+		ln, err = quicListenAddr(s.uniCast.Addr, tlsConf, s.QuicConfig)
 	} else {
 		ln, err = quicListen(conn, tlsConf, s.QuicConfig)
 	}
@@ -223,10 +224,10 @@ func (s *Server) handleConn(sess quic.EarlySession) {
 }
 
 func (s *Server) maxHeaderBytes() uint64 {
-	if s.Server.MaxHeaderBytes <= 0 {
+	if s.uniCast.MaxHeaderBytes <= 0 {
 		return http.DefaultMaxHeaderBytes
 	}
-	return uint64(s.Server.MaxHeaderBytes)
+	return uint64(s.uniCast.MaxHeaderBytes)
 }
 
 func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpack.Decoder, onFrameError func()) requestError {
@@ -271,7 +272,7 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 	req = req.WithContext(ctx)
 	responseWriter := newResponseWriter(str, s.logger)
 	defer responseWriter.Flush()
-	handler := s.Handler
+	handler := s.uniCast.Handler
 	if handler == nil {
 		handler = http.DefaultServeMux
 	}
@@ -334,7 +335,7 @@ func (s *Server) SetQuicHeaders(hdr http.Header) error {
 
 	if port == 0 {
 		// Extract port from s.Server.Addr
-		_, portStr, err := net.SplitHostPort(s.Server.Addr)
+		_, portStr, err := net.SplitHostPort(s.uniCast.Addr)
 		if err != nil {
 			return err
 		}
@@ -356,7 +357,7 @@ func (s *Server) SetQuicHeaders(hdr http.Header) error {
 // used when handler is nil.
 func ListenAndServeQUIC(addr, certFile, keyFile string, handler http.Handler) error {
 	server := &Server{
-		Server: &http.Server{
+		uniCast: &http.Server{
 			Addr:    addr,
 			Handler: handler,
 		},
@@ -364,11 +365,11 @@ func ListenAndServeQUIC(addr, certFile, keyFile string, handler http.Handler) er
 	return server.ListenAndServeTLS(certFile, keyFile)
 }
 
-// ListenAndServe listens on the given network address for both, TLS and QUIC
+// ListenAndServeMulti listens on the given network address' for both, TLS and QUIC
 // connetions in parallel. It returns if one of the two returns an error.
 // http.DefaultServeMux is used when handler is nil.
 // The correct Alt-Svc headers for QUIC are set.
-func ListenAndServe(addr, certFile, keyFile string, handler http.Handler) error {
+func ListenAndServeMulti(addr, multiAddr,certFile, keyFile string, handler http.Handler) error {
 	// Load certs
 	var err error
 	certs := make([]tls.Certificate, 1)
@@ -406,24 +407,61 @@ func ListenAndServe(addr, certFile, keyFile string, handler http.Handler) error 
 	tlsConn := tls.NewListener(tcpConn, config)
 	defer tlsConn.Close()
 
+	ift, err := net.Interfaces()
+	if err != nil {
+		return err
+	}
+	fmt.Println(ift)
+
+	ifat, err := net.InterfaceByIndex(2)
+	if err != nil {
+		return err
+	}
+	fmt.Println(ifat)
+
+	// Open the multicast connection
+	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
+	if err != nil {
+		return err
+	}
+	multiUdpConn, err := net.ListenMulticastUDP("udp", ifat, multiUdpAddr)
+	if err != nil {
+		return err
+	}
+	defer multiUdpConn.Close()
+
+
 	// Start the servers
 	httpServer := &http.Server{
 		Addr:      addr,
 		TLSConfig: config,
 	}
 
+
+	// Start the multicast server
+	multiHttpServer := &http.Server{
+		Addr:      multiAddr,
+		TLSConfig: config,
+	}
+
+
 	quicServer := &Server{
-		Server: httpServer,
+		uniCast: httpServer,
+		multiCast: multiHttpServer,
 	}
 
 	if handler == nil {
 		handler = http.DefaultServeMux
 	}
-	httpServer.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	quicServer.uniCast.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		quicServer.SetQuicHeaders(w.Header())
 		handler.ServeHTTP(w, r)
 	})
-
+	quicServer.multiCast.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		quicServer.SetQuicHeaders(w.Header())
+		handler.ServeHTTP(w, r)
+	})
+	
 	hErr := make(chan error)
 	qErr := make(chan error)
 	go func() {

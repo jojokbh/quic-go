@@ -6,11 +6,11 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
-	"github.com/lucas-clemente/quic-go/fuzzing/internal/helper"
-	"github.com/lucas-clemente/quic-go/internal/protocol"
-	"github.com/lucas-clemente/quic-go/internal/qerr"
-	"github.com/lucas-clemente/quic-go/internal/wire"
+	"github.com/jojokbh/quic-go"
+	"github.com/jojokbh/quic-go/fuzzing/internal/helper"
+	"github.com/jojokbh/quic-go/internal/protocol"
+	"github.com/jojokbh/quic-go/internal/qerr"
+	"github.com/jojokbh/quic-go/internal/wire"
 )
 
 const version = protocol.VersionTLS

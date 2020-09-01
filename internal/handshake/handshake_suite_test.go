@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/lucas-clemente/quic-go/internal/qtls"
+	"github.com/jojokbh/quic-go/internal/qtls"
 
 	"github.com/golang/mock/gomock"
 
