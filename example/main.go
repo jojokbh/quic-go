@@ -178,9 +178,11 @@ func setupHandler(www string, trace bool) http.Handler {
 
 func main() {
 	// defer profile.Start().Stop()
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
+	/*
+		go func() {
+			log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
+	*/
 	// runtime.SetBlockProfileRate(1)
 
 	verbose := flag.Bool("v", false, "verbose")
@@ -233,7 +235,7 @@ func main() {
 				err = http3.ListenAndServe(bCap, certFile, keyFile, nil)
 			} else {
 				server := http3.Server{
-					Server:     &http.Server{Handler: handler, Addr: bCap},
+					UniCast:    &http.Server{Handler: handler, Addr: bCap},
 					QuicConfig: quicConf,
 				}
 				err = server.ListenAndServeTLS(testdata.GetCertificatePaths())

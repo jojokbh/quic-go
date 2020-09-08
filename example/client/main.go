@@ -25,10 +25,11 @@ func main() {
 	verbose := flag.Bool("v", false, "verbose")
 	quiet := flag.Bool("q", false, "don't print the data")
 	keyLogFile := flag.String("keylog", "", "key log file")
-	insecure := flag.Bool("insecure", false, "skip certificate verification")
+	//insecure := flag.Bool("insecure", true, "skip certificate verification")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
 	flag.Parse()
-	urls := flag.Args()
+	urls := [1]string{"https://localhost:6121/demo/tile"}
+	//urls := [4]string{"https://127.0.0.1:6121/demo/tile", "localhost:6121/demo/tile", "127.0.0.1:6060/demo/tile", "localhost:6060/demo/tile"}
 
 	logger := utils.DefaultLogger
 
@@ -70,7 +71,7 @@ func main() {
 	roundTripper := &http3.RoundTripper{
 		TLSClientConfig: &tls.Config{
 			RootCAs:            pool,
-			InsecureSkipVerify: *insecure,
+			InsecureSkipVerify: true,
 			KeyLogWriter:       keyLog,
 		},
 		QuicConfig: &qconf,
