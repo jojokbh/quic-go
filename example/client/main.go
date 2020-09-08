@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/logging"
 	"github.com/jojokbh/quic-go/qlog"
+	"golang.org/x/net/ipv4"
 )
 
 func main() {
@@ -28,7 +30,7 @@ func main() {
 	//insecure := flag.Bool("insecure", true, "skip certificate verification")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
 	flag.Parse()
-	urls := [1]string{"https://localhost:6121/demo/tile"}
+	urls := [2]string{"https://localhost:6121/demo/tile", "https://224.0.0.1:8080/demo/tile"}
 	//urls := [4]string{"https://127.0.0.1:6121/demo/tile", "localhost:6121/demo/tile", "127.0.0.1:6060/demo/tile", "localhost:6060/demo/tile"}
 
 	logger := utils.DefaultLogger
@@ -79,6 +81,27 @@ func main() {
 	defer roundTripper.Close()
 	hclient := &http.Client{
 		Transport: roundTripper,
+	}
+
+	group := net.IPv4(224, 0, 0, 250)
+
+	ifat, err := net.InterfaceByIndex(2)
+	if err != nil {
+		return
+	}
+	fmt.Println(ifat)
+
+	quic.Dial()
+
+	c, err := net.ListenPacket("udp4", "0.0.0.0:8080")
+	if err != nil {
+		// error handling
+	}
+	defer c.Close()
+
+	p := ipv4.NewPacketConn(c)
+	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
+		// error handling
 	}
 
 	var wg sync.WaitGroup

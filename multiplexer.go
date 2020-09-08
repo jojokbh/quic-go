@@ -8,6 +8,7 @@ import (
 
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/logging"
+	"golang.org/x/net/ipv4"
 )
 
 var (
@@ -17,6 +18,7 @@ var (
 
 type multiplexer interface {
 	AddConn(c net.PacketConn, connIDLen int, statelessResetKey []byte, tracer logging.Tracer) (packetHandlerManager, error)
+	AddMultiConn(c net.PacketConn, m *ipv4.PacketConn, connIDLen int, statelessResetKey []byte, tracer logging.Tracer) (packetHandlerManager, error)
 	RemoveConn(net.PacketConn) error
 }
 
@@ -59,8 +61,9 @@ func (m *connMultiplexer) AddConn(
 ) (packetHandlerManager, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
+	mconstring := ""
 
-	connIndex := c.LocalAddr().Network() + " " + c.LocalAddr().String()
+	connIndex := c.LocalAddr().Network() + " " + c.LocalAddr().String() + " " + mconstring
 	p, ok := m.conns[connIndex]
 	if !ok {
 		manager := m.newPacketHandlerManager(c, connIDLen, statelessResetKey, tracer, m.logger)
@@ -96,4 +99,40 @@ func (m *connMultiplexer) RemoveConn(c net.PacketConn) error {
 
 	delete(m.conns, connIndex)
 	return nil
+}
+
+func (m *connMultiplexer) AddMultiConn(
+	c net.PacketConn,
+	mcon *ipv4.PacketConn,
+	connIDLen int,
+	statelessResetKey []byte,
+	tracer logging.Tracer,
+) (packetHandlerManager, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	mconstring := ""
+
+	connIndex := c.LocalAddr().Network() + " " + c.LocalAddr().String() + " " + mconstring
+	p, ok := m.conns[connIndex]
+	if !ok {
+		manager := m.newPacketHandlerManager(c, connIDLen, statelessResetKey, tracer, m.logger)
+		p = connManager{
+			connIDLen:         connIDLen,
+			statelessResetKey: statelessResetKey,
+			manager:           manager,
+			tracer:            tracer,
+		}
+		m.conns[connIndex] = p
+	} else {
+		if p.connIDLen != connIDLen {
+			return nil, fmt.Errorf("cannot use %d byte connection IDs on a connection that is already using %d byte connction IDs", connIDLen, p.connIDLen)
+		}
+		if statelessResetKey != nil && !bytes.Equal(p.statelessResetKey, statelessResetKey) {
+			return nil, fmt.Errorf("cannot use different stateless reset keys on the same packet conn")
+		}
+		if tracer != p.tracer {
+			return nil, fmt.Errorf("cannot use different tracers on the same packet conn")
+		}
+	}
+	return p.manager, nil
 }

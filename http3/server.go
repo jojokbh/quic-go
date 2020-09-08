@@ -21,8 +21,9 @@ import (
 
 // allows mocking of quic.Listen and quic.ListenAddr
 var (
-	quicListen     = quic.ListenEarly
-	quicListenAddr = quic.ListenAddrEarly
+	quicListen          = quic.ListenEarly
+	quicListenAddr      = quic.ListenAddrEarly
+	quicListenMultiAddr = quic.ListenMultiAddrEarly
 )
 
 const nextProtoH3 = "h3-29"
@@ -60,7 +61,7 @@ func newConnError(code errorCode, err error) requestError {
 // Server is a HTTP2 server listening for QUIC connections.
 type Server struct {
 	UniCast   *http.Server
-	multiCast *http.Server
+	MultiCast *http.Server
 
 	// By providing a quic.Config, it is possible to set parameters of the QUIC connection.
 	// If nil, it uses reasonable default values.
@@ -142,6 +143,59 @@ func (s *Server) serveImpl(tlsConf *tls.Config, conn net.PacketConn) error {
 	var err error
 	if conn == nil {
 		ln, err = quicListenAddr(s.UniCast.Addr, tlsConf, s.QuicConfig)
+	} else {
+		ln, err = quicListen(conn, tlsConf, s.QuicConfig)
+	}
+	if err != nil {
+		return err
+	}
+	s.addListener(&ln)
+	defer s.removeListener(&ln)
+
+	for {
+		sess, err := ln.Accept(context.Background())
+		if err != nil {
+			return err
+		}
+		go s.handleConn(sess)
+	}
+}
+
+func (s *Server) serveImplMulti(tlsConf *tls.Config, conn net.PacketConn) error {
+	if s.closed.Get() {
+		return http.ErrServerClosed
+	}
+	if s.UniCast == nil {
+		return errors.New("use of http3.Server without http.Server")
+	}
+	s.loggerOnce.Do(func() {
+		s.logger = utils.DefaultLogger.WithPrefix("server")
+	})
+
+	if tlsConf == nil {
+		tlsConf = &tls.Config{}
+	} else {
+		tlsConf = tlsConf.Clone()
+	}
+	// Replace existing ALPNs by H3
+	tlsConf.NextProtos = []string{nextProtoH3}
+	if tlsConf.GetConfigForClient != nil {
+		getConfigForClient := tlsConf.GetConfigForClient
+		tlsConf.GetConfigForClient = func(ch *tls.ClientHelloInfo) (*tls.Config, error) {
+			conf, err := getConfigForClient(ch)
+			if err != nil || conf == nil {
+				return conf, err
+			}
+			conf = conf.Clone()
+			conf.NextProtos = []string{nextProtoH3}
+			return conf, nil
+		}
+	}
+
+	var ln quic.EarlyListener
+	var err error
+	if conn == nil {
+		ln, err = quicListenMultiAddr(s.MultiCast.Addr, tlsConf, s.QuicConfig)
 	} else {
 		ln, err = quicListen(conn, tlsConf, s.QuicConfig)
 	}
@@ -519,7 +573,7 @@ func ListenAndServeMulti(addr, multiAddr, certFile, keyFile string, handler http
 
 	quicServer := &Server{
 		UniCast:   httpServer,
-		multiCast: multiHttpServer,
+		MultiCast: multiHttpServer,
 	}
 
 	if handler == nil {
@@ -529,7 +583,7 @@ func ListenAndServeMulti(addr, multiAddr, certFile, keyFile string, handler http
 		quicServer.SetQuicHeaders(w.Header())
 		handler.ServeHTTP(w, r)
 	})
-	quicServer.multiCast.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	quicServer.MultiCast.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		quicServer.SetQuicHeaders(w.Header())
 		handler.ServeHTTP(w, r)
 	})

@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -196,6 +197,18 @@ func main() {
 
 	logger := utils.DefaultLogger
 
+	ift, err := net.Interfaces()
+	if err != nil {
+		return
+	}
+	fmt.Println(ift)
+
+	ifat, err := net.InterfaceByIndex(2)
+	if err != nil {
+		return
+	}
+	fmt.Println(ifat)
+
 	if *verbose {
 		logger.SetLogLevel(utils.LogLevelDebug)
 	} else {
@@ -208,6 +221,7 @@ func main() {
 	}
 
 	handler := setupHandler(*www, *trace)
+	multicastHandler := setupHandler(*www, *trace)
 	quicConf := &quic.Config{}
 	if *trace {
 		quicConf.QuicTracer = tracer
@@ -236,6 +250,7 @@ func main() {
 			} else {
 				server := http3.Server{
 					UniCast:    &http.Server{Handler: handler, Addr: bCap},
+					MultiCast:  &http.Server{Handler: multicastHandler, Addr: "224.0.0.1:8080"},
 					QuicConfig: quicConf,
 				}
 				err = server.ListenAndServeTLS(testdata.GetCertificatePaths())
