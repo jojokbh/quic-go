@@ -192,10 +192,23 @@ func (s *Server) serveImplMulti(tlsConf *tls.Config, conn net.PacketConn) error 
 		}
 	}
 
-	var ln quic.EarlyListener
 	var err error
+
+	ift, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	fmt.Println(ift)
+
+	ifat, err := net.InterfaceByIndex(2)
+	if err != nil {
+		return nil
+	}
+	fmt.Println(ifat)
+
+	var ln quic.EarlyListener
 	if conn == nil {
-		ln, err = quicListenMultiAddr(s.MultiCast.Addr, tlsConf, s.QuicConfig)
+		ln, err = quicListenMultiAddr("", s.MultiCast.Addr, tlsConf, ifat, s.QuicConfig)
 	} else {
 		ln, err = quicListen(conn, tlsConf, s.QuicConfig)
 	}

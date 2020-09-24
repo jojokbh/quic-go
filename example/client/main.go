@@ -70,13 +70,14 @@ func main() {
 			return utils.NewBufferedWriteCloser(bufio.NewWriter(f), f)
 		})
 	}
+	tlsconf := &tls.Config{
+		RootCAs:            pool,
+		InsecureSkipVerify: true,
+		KeyLogWriter:       keyLog,
+	}
 	roundTripper := &http3.RoundTripper{
-		TLSClientConfig: &tls.Config{
-			RootCAs:            pool,
-			InsecureSkipVerify: true,
-			KeyLogWriter:       keyLog,
-		},
-		QuicConfig: &qconf,
+		TLSClientConfig: tlsconf,
+		QuicConfig:      &qconf,
 	}
 	defer roundTripper.Close()
 	hclient := &http.Client{
@@ -91,8 +92,6 @@ func main() {
 	}
 	fmt.Println(ifat)
 
-	quic.Dial()
-
 	c, err := net.ListenPacket("udp4", "0.0.0.0:8080")
 	if err != nil {
 		// error handling
@@ -103,6 +102,20 @@ func main() {
 	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
 		// error handling
 	}
+
+	r, _ := ifat.Addrs()
+
+	var aa net.Addr
+
+	for _, a := range r {
+		println(a.Network)
+		println(a.String)
+		aa = a
+	}
+
+	session, err := quic.Dial(c, aa, "224.0.0.1:8080", tlsconf, &qconf)
+
+	print(session)
 
 	var wg sync.WaitGroup
 	wg.Add(len(urls))
