@@ -3,20 +3,25 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/jojokbh/quic-go"
 	"github.com/jojokbh/quic-go/http3"
-	"github.com/jojokbh/quic-go/internal/testdata"
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/logging"
 	"github.com/jojokbh/quic-go/qlog"
@@ -30,8 +35,8 @@ func main() {
 	//insecure := flag.Bool("insecure", true, "skip certificate verification")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
 	flag.Parse()
-	urls := [2]string{"https://localhost:6121/demo/tile", "https://224.0.0.1:8080/demo/tile"}
-	//urls := [4]string{"https://127.0.0.1:6121/demo/tile", "localhost:6121/demo/tile", "127.0.0.1:6060/demo/tile", "localhost:6060/demo/tile"}
+	//urls := [2]string{"https://localhost:6121/demo/tile", "https://224.42.42.1:1235/demo/tile"}
+	urls := [4]string{"https://ottb-ses.redirectme.net:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 
 	logger := utils.DefaultLogger
 
@@ -56,7 +61,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	testdata.AddRootCA(pool)
 
 	var qconf quic.Config
 	if *enableQlog {
@@ -113,7 +117,7 @@ func main() {
 		aa = a
 	}
 
-	session, err := quic.Dial(c, aa, "224.0.0.1:8080", tlsconf, &qconf)
+	session, err := quic.Dial(c, aa, "224.42.42.1:1235", tlsconf, &qconf)
 
 	print(session)
 
@@ -143,4 +147,77 @@ func main() {
 		}(addr)
 	}
 	wg.Wait()
+}
+
+const keyBits = 1024
+
+func getCert() (string, string) {
+
+	caCert := &x509.Certificate{
+		SerialNumber: big.NewInt(2020),
+		Subject: pkix.Name{
+			Organization:  []string{"Multicast QUIC Task Force"},
+			Country:       []string{"DK"},
+			Province:      []string{""},
+			Locality:      []string{"Copenhagen"},
+			StreetAddress: []string{"A.C. Mayers"},
+			PostalCode:    []string{"2450"},
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().AddDate(0, 1, 0),
+		IsCA:      true,
+		ExtKeyUsage: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageClientAuth,
+			x509.ExtKeyUsageServerAuth,
+		},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+
+	servCert := &x509.Certificate{
+		SerialNumber: big.NewInt(2021),
+		Subject: pkix.Name{
+			Organization:  []string{"Multicast QUIC Task Force"},
+			Country:       []string{"DK"},
+			Province:      []string{""},
+			Locality:      []string{"Copenhagen"},
+			StreetAddress: []string{"A.C. Mayers"},
+			PostalCode:    []string{"2450"},
+		},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().AddDate(0, 1, 0),
+		SubjectKeyId: []byte{1, 2, 3, 4, 6},
+		ExtKeyUsage: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageClientAuth,
+			x509.ExtKeyUsageServerAuth,
+		},
+		KeyUsage: x509.KeyUsageDigitalSignature,
+		DNSNames: []string{"localhost"},
+	}
+
+	servPrivateKey, err := rsa.GenerateKey(rand.Reader, keyBits)
+	if err != nil {
+		print("#1")
+		println(err)
+	}
+
+	// signs the TLS certificate by the CA
+	servCertBytes, err := x509.CreateCertificate(rand.Reader, servCert, caCert, &servPrivateKey.PublicKey, servPrivateKey)
+	if err != nil {
+		print("#2")
+		println(err)
+	}
+
+	servPrivateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(servPrivateKey),
+	})
+
+	servCertificatePEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: servCertBytes,
+	})
+
+	return string(servCertificatePEM), string(servPrivateKeyPEM)
 }

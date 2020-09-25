@@ -86,18 +86,20 @@ func (s *Server) ListenAndServe() error {
 }
 
 // ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
-func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
-	var err error
-	certs := make([]tls.Certificate, 1)
-	certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return err
-	}
-	// We currently only use the cert-related stuff from tls.Config,
-	// so we don't need to make a full copy.
-	config := &tls.Config{
-		Certificates: certs,
-	}
+func (s *Server) ListenAndServeTLS(config *tls.Config) error {
+	/*
+		var err error
+		certs := make([]tls.Certificate, 1)
+		certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return err
+		}
+		// We currently only use the cert-related stuff from tls.Config,
+		// so we don't need to make a full copy.
+		config := &tls.Config{
+			Certificates: certs,
+		}
+	*/
 	return s.serveImpl(config, nil)
 }
 
@@ -161,7 +163,7 @@ func (s *Server) serveImpl(tlsConf *tls.Config, conn net.PacketConn) error {
 	}
 }
 
-func (s *Server) serveImplMulti(tlsConf *tls.Config, conn net.PacketConn) error {
+func (s *Server) serveImplMulti(tlsConf *tls.Config, ifat *net.Interface, conn net.PacketConn) error {
 	if s.closed.Get() {
 		return http.ErrServerClosed
 	}
@@ -193,18 +195,6 @@ func (s *Server) serveImplMulti(tlsConf *tls.Config, conn net.PacketConn) error 
 	}
 
 	var err error
-
-	ift, err := net.Interfaces()
-	if err != nil {
-		return nil
-	}
-	fmt.Println(ift)
-
-	ifat, err := net.InterfaceByIndex(2)
-	if err != nil {
-		return nil
-	}
-	fmt.Println(ifat)
 
 	var ln quic.EarlyListener
 	if conn == nil {
@@ -429,7 +419,18 @@ func ListenAndServeQUIC(addr, certFile, keyFile string, handler http.Handler) er
 			Handler: handler,
 		},
 	}
-	return server.ListenAndServeTLS(certFile, keyFile)
+	var err error
+	certs := make([]tls.Certificate, 1)
+	certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return err
+	}
+	// We currently only use the cert-related stuff from tls.Config,
+	// so we don't need to make a full copy.
+	config := &tls.Config{
+		Certificates: certs,
+	}
+	return server.ListenAndServeTLS(config)
 }
 
 // ListenAndServe listens on the given network address for both, TLS and QUIC
@@ -552,18 +553,6 @@ func ListenAndServeMulti(addr, multiAddr, certFile, keyFile string, handler http
 
 	tlsConn := tls.NewListener(tcpConn, config)
 	defer tlsConn.Close()
-
-	ift, err := net.Interfaces()
-	if err != nil {
-		return err
-	}
-	fmt.Println(ift)
-
-	ifat, err := net.InterfaceByIndex(2)
-	if err != nil {
-		return err
-	}
-	fmt.Println(ifat)
 
 	// Open the multicast connection
 	multiUdpConn, err := net.ListenPacket("udp4", "0.0.0.0:1024")

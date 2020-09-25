@@ -3,12 +3,19 @@ package main
 import (
 	"bufio"
 	"crypto/md5"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -16,12 +23,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	_ "net/http/pprof"
 
 	"github.com/jojokbh/quic-go"
 	"github.com/jojokbh/quic-go/http3"
-	"github.com/jojokbh/quic-go/internal/testdata"
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/logging"
 	"github.com/jojokbh/quic-go/qlog"
@@ -245,15 +252,16 @@ func main() {
 		go func() {
 			var err error
 			if *tcp {
-				certFile, keyFile := testdata.GetCertificatePaths()
-				err = http3.ListenAndServe(bCap, certFile, keyFile, nil)
+				//certFile, keyFile := getCert()
+				//err = http3.ListenAndServe(bCap, certFile, keyFile, nil)
 			} else {
 				server := http3.Server{
 					UniCast:    &http.Server{Handler: handler, Addr: bCap},
-					MultiCast:  &http.Server{Handler: multicastHandler, Addr: "224.0.0.1:8080"},
+					MultiCast:  &http.Server{Handler: multicastHandler, Addr: "224.42.42.1:1235"},
 					QuicConfig: quicConf,
 				}
-				err = server.ListenAndServeTLS(testdata.GetCertificatePaths())
+
+				err = server.ListenAndServeTLS(getCert())
 			}
 			if err != nil {
 				fmt.Println(err)
@@ -262,4 +270,88 @@ func main() {
 		}()
 	}
 	wg.Wait()
+}
+
+const keyBits = 1024
+
+func getCert() *tls.Config {
+
+	caCert := &x509.Certificate{
+		SerialNumber: big.NewInt(2020),
+		Subject: pkix.Name{
+			Organization:  []string{"Multicast QUIC Task Force"},
+			Country:       []string{"DK"},
+			Province:      []string{""},
+			Locality:      []string{"Copenhagen"},
+			StreetAddress: []string{"A.C. Mayers"},
+			PostalCode:    []string{"2450"},
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().AddDate(0, 1, 0),
+		IsCA:      true,
+		ExtKeyUsage: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageClientAuth,
+			x509.ExtKeyUsageServerAuth,
+		},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+
+	servCert := &x509.Certificate{
+		SerialNumber: big.NewInt(2021),
+		Subject: pkix.Name{
+			Organization:  []string{"Multicast QUIC Task Force"},
+			Country:       []string{"DK"},
+			Province:      []string{""},
+			Locality:      []string{"Copenhagen"},
+			StreetAddress: []string{"A.C. Mayers"},
+			PostalCode:    []string{"2450"},
+		},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().AddDate(0, 1, 0),
+		SubjectKeyId: []byte{1, 2, 3, 4, 6},
+		ExtKeyUsage: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageClientAuth,
+			x509.ExtKeyUsageServerAuth,
+		},
+		KeyUsage: x509.KeyUsageDigitalSignature,
+		DNSNames: []string{"localhost"},
+	}
+
+	servPrivateKey, err := rsa.GenerateKey(rand.Reader, keyBits)
+	if err != nil {
+		println("#1")
+		println(err)
+	}
+
+	// signs the TLS certificate by the CA
+	servCertBytes, err := x509.CreateCertificate(rand.Reader, servCert, caCert, &servPrivateKey.PublicKey, servPrivateKey)
+	if err != nil {
+		println("#2")
+		println(err)
+	}
+
+	servPrivateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(servPrivateKey),
+	})
+
+	servCertificatePEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: servCertBytes,
+	})
+
+	servTLSCertificate, err := tls.X509KeyPair(servCertificatePEM, servPrivateKeyPEM)
+	if err != nil {
+		panic(err)
+	}
+
+	serverTLSConfig := &tls.Config{
+		Certificates: []tls.Certificate{servTLSCertificate},
+		NextProtos:   []string{"go-multicast-quic"},
+		MinVersion:   tls.VersionTLS13,
+	}
+
+	return serverTLSConfig
 }
