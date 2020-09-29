@@ -136,7 +136,7 @@ type session struct {
 	version        protocol.VersionNumber
 	config         *Config
 
-	conn      sendConn
+	conn      multiSendConn
 	sendQueue *sendQueue
 
 	streamsMap      streamManager
@@ -181,6 +181,7 @@ type session struct {
 	handshakeCompleteChan chan struct{} // is closed when the handshake completes
 	handshakeComplete     bool
 	handshakeConfirmed    bool
+	multi                 bool
 
 	receivedRetry       bool
 	versionNegotiated   bool
@@ -215,7 +216,7 @@ var _ EarlySession = &session{}
 var _ streamSender = &session{}
 
 var newSession = func(
-	conn sendConn,
+	conn multiSendConn,
 	runner sessionRunner,
 	origDestConnID protocol.ConnectionID,
 	retrySrcConnID *protocol.ConnectionID,
@@ -706,6 +707,73 @@ func (s *session) handleHandshakeComplete() {
 }
 
 func (s *session) handlePacketImpl(rp *receivedPacket) bool {
+	if wire.IsVersionNegotiationPacket(rp.data) {
+		s.handleVersionNegotiationPacket(rp)
+		return false
+	}
+
+	var counter uint8
+	var lastConnID protocol.ConnectionID
+	var processed bool
+	data := rp.data
+	p := rp
+	s.sentPacketHandler.ReceivedBytes(protocol.ByteCount(len(data)))
+	for len(data) > 0 {
+		if counter > 0 {
+			p = p.Clone()
+			p.data = data
+		}
+
+		hdr, packetData, rest, err := wire.ParsePacket(p.data, s.srcConnIDLen)
+		if err != nil {
+			if s.tracer != nil {
+				dropReason := logging.PacketDropHeaderParseError
+				if err == wire.ErrUnsupportedVersion {
+					dropReason = logging.PacketDropUnsupportedVersion
+				}
+				s.tracer.DroppedPacket(logging.PacketTypeNotDetermined, protocol.ByteCount(len(data)), dropReason)
+			}
+			s.logger.Debugf("error parsing packet: %s", err)
+			break
+		}
+
+		if hdr.IsLongHeader && hdr.Version != s.version {
+			if s.tracer != nil {
+				s.tracer.DroppedPacket(logging.PacketTypeFromHeader(hdr), protocol.ByteCount(len(data)), logging.PacketDropUnexpectedVersion)
+			}
+			s.logger.Debugf("Dropping packet with version %x. Expected %x.", hdr.Version, s.version)
+			break
+		}
+
+		if counter > 0 && !hdr.DestConnectionID.Equal(lastConnID) {
+			if s.tracer != nil {
+				s.tracer.DroppedPacket(logging.PacketTypeFromHeader(hdr), protocol.ByteCount(len(data)), logging.PacketDropUnknownConnectionID)
+			}
+			s.logger.Debugf("coalesced packet has different destination connection ID: %s, expected %s", hdr.DestConnectionID, lastConnID)
+			break
+		}
+		lastConnID = hdr.DestConnectionID
+
+		if counter > 0 {
+			p.buffer.Split()
+		}
+		counter++
+
+		// only log if this actually a coalesced packet
+		if s.logger.Debug() && (counter > 1 || len(rest) > 0) {
+			s.logger.Debugf("Parsed a coalesced packet. Part %d: %d bytes. Remaining: %d bytes.", counter, len(packetData), len(rest))
+		}
+		p.data = packetData
+		if wasProcessed := s.handleSinglePacket(p, hdr); wasProcessed {
+			processed = true
+		}
+		data = rest
+	}
+	p.buffer.MaybeRelease()
+	return processed
+}
+
+func (s *session) handlePacketMultiImpl(rp *receivedPacket) bool {
 	if wire.IsVersionNegotiationPacket(rp.data) {
 		s.handleVersionNegotiationPacket(rp)
 		return false

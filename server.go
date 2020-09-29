@@ -63,7 +63,7 @@ type baseServer struct {
 	config  *Config
 
 	conn      net.PacketConn
-	multiConn ipv4.PacketConn
+	multiConn net.UDPConn
 	// If the server is started with ListenAddr, we create a packet conn.
 	// If it is started with Listen, we take a packet conn as a parameter.
 	createdPacketConn      bool
@@ -78,7 +78,7 @@ type baseServer struct {
 
 	// set as a member, so they can be set in the tests
 	newSession func(
-		sendConn,
+		multiSendConn,
 		sessionRunner,
 		protocol.ConnectionID, /* original dest connection ID */
 		*protocol.ConnectionID, /* retry src connection ID */
@@ -161,32 +161,55 @@ func listenAddr(addr string, tlsConf *tls.Config, config *Config, acceptEarly bo
 
 func listenMultiAddr(addr string, multiAddr string, tlsConf *tls.Config, config *Config, ifat *net.Interface, acceptEarly bool) (*baseServer, error) {
 
+	fmt.Printf("a %s m: %s \n", addr, multiAddr)
+
 	c, err := net.ListenPacket("udp4", multiAddr)
 	if err != nil {
-		// error handling
+		println("Error #1 " + err.Error())
 	}
 
 	defer c.Close()
 
-	group := net.ParseIP(addr)
+	mHost, _, err := net.SplitHostPort(multiAddr)
+	if err != nil {
+		println("Split host error " + err.Error())
+	}
+
+	group := net.ParseIP(mHost)
 
 	p := ipv4.NewPacketConn(c)
 	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
 		// error handling
+		println("Error #2 " + err.Error())
+	}
+
+	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
+	if err != nil {
+		println("Error #3 " + err.Error())
+		return nil, err
 	}
 
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
+		println("Error #3 " + err.Error())
+		return nil, err
+	}
+
+	multiConn, err := net.DialUDP("udp", nil, multiUdpAddr)
+	if err != nil {
+		println("Error #4 " + err.Error())
 		return nil, err
 	}
 
 	conn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
+		println("Error #5 " + err.Error())
 		return nil, err
 	}
 
-	serv, err := ListenMulti(conn, p, tlsConf, config, acceptEarly)
+	serv, err := ListenMulti(conn, multiConn, tlsConf, config, acceptEarly)
 	if err != nil {
+		println("Error #6 " + err.Error())
 		return nil, err
 	}
 	serv.createdPacketConn = true
@@ -258,7 +281,7 @@ func listen(conn net.PacketConn, tlsConf *tls.Config, config *Config, acceptEarl
 	return s, nil
 }
 
-func ListenMulti(conn net.PacketConn, multiConn *ipv4.PacketConn, tlsConf *tls.Config, config *Config, acceptEarly bool) (*baseServer, error) {
+func ListenMulti(conn net.PacketConn, multiConn *net.UDPConn, tlsConf *tls.Config, config *Config, acceptEarly bool) (*baseServer, error) {
 	if tlsConf == nil {
 		return nil, errors.New("quic: tls.Config not set")
 	}
@@ -297,7 +320,7 @@ func ListenMulti(conn net.PacketConn, multiConn *ipv4.PacketConn, tlsConf *tls.C
 		logger:              utils.DefaultLogger.WithPrefix("server"),
 		acceptEarlySessions: acceptEarly,
 	}
-	go s.runMulti()
+	go s.run()
 	sessionHandler.SetServer(s)
 	s.logger.Debugf("Listening for %s connections on %s", conn.LocalAddr().Network(), conn.LocalAddr().String())
 	return s, nil
@@ -308,11 +331,13 @@ func (s *baseServer) runMulti() {
 	for {
 		select {
 		case <-s.errorChan:
+			println("Here#1")
 			return
 		default:
 		}
 		select {
 		case <-s.errorChan:
+			println("Here#2")
 			return
 		case p := <-s.receivedPackets:
 			if shouldReleaseBuffer := s.handlePacketImplMulti(p); !shouldReleaseBuffer {
@@ -419,6 +444,16 @@ func (s *baseServer) setCloseError(e error) {
 // Addr returns the server's network address
 func (s *baseServer) Addr() net.Addr {
 	return s.conn.LocalAddr()
+}
+
+// Addr returns the server's network address
+func (s *baseServer) MultiAddr() net.Addr {
+	if addr, ok := s.multiConn.RemoteAddr().(*net.TCPAddr); ok {
+		fmt.Println(addr.IP.String())
+	} else {
+		//println("TCP error " + s.multiConn.RemoteAddr().String())
+	}
+	return s.multiConn.RemoteAddr()
 }
 
 func (s *baseServer) handlePacket(p *receivedPacket) {
@@ -724,8 +759,14 @@ func (s *baseServer) createNewMultiSession(
 			}
 			tracer = s.config.Tracer.TracerForConnection(protocol.PerspectiveServer, connID)
 		}
+		println(" REMOTE ")
+		print(s.multiConn.RemoteAddr())
+		println(" local ")
+		print(s.multiConn.LocalAddr())
+		println(" 2nd ")
+		print(remoteAddr)
 		sess = s.newSession(
-			newSendMultiConn(s.conn, s.multiConn, remoteAddr),
+			newSendMultiConn(s.conn, s.multiConn, remoteAddr, s.MultiAddr()),
 			s.sessionHandler,
 			origDestConnID,
 			retrySrcConnID,
@@ -770,8 +811,9 @@ func (s *baseServer) createNewSession(
 			}
 			tracer = s.config.Tracer.TracerForConnection(protocol.PerspectiveServer, connID)
 		}
+
 		sess = s.newSession(
-			newSendConn(s.conn, remoteAddr),
+			newSendMultiConn(s.conn, s.multiConn, remoteAddr, s.MultiAddr()),
 			s.sessionHandler,
 			origDestConnID,
 			retrySrcConnID,

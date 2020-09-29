@@ -28,6 +28,11 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+const (
+	srvAddr         = "224.0.0.1:9999"
+	maxDatagramSize = 8192
+)
+
 func main() {
 	verbose := flag.Bool("v", false, "verbose")
 	quiet := flag.Bool("q", false, "don't print the data")
@@ -35,8 +40,9 @@ func main() {
 	//insecure := flag.Bool("insecure", true, "skip certificate verification")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
 	flag.Parse()
-	//urls := [2]string{"https://localhost:6121/demo/tile", "https://224.42.42.1:1235/demo/tile"}
-	urls := [4]string{"https://ottb-ses.redirectme.net:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
+	urls := [1]string{"https://localhost:8081/demo/text"}
+	//urls := [2]string{"https://localhost:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
+	//urls := [4]string{"https://ottb-ses.redirectme.net:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 
 	logger := utils.DefaultLogger
 
@@ -79,16 +85,8 @@ func main() {
 		InsecureSkipVerify: true,
 		KeyLogWriter:       keyLog,
 	}
-	roundTripper := &http3.RoundTripper{
-		TLSClientConfig: tlsconf,
-		QuicConfig:      &qconf,
-	}
-	defer roundTripper.Close()
-	hclient := &http.Client{
-		Transport: roundTripper,
-	}
 
-	group := net.IPv4(224, 0, 0, 250)
+	//group := net.IPv4(224, 24, 24, 1)
 
 	ifat, err := net.InterfaceByIndex(2)
 	if err != nil {
@@ -96,16 +94,33 @@ func main() {
 	}
 	fmt.Println(ifat)
 
-	c, err := net.ListenPacket("udp4", "0.0.0.0:8080")
+	c, err := net.ListenPacket("udp4", "224.42.42.1:1235")
 	if err != nil {
 		// error handling
+		println("Error listen unicast " + err.Error())
 	}
 	defer c.Close()
 
-	p := ipv4.NewPacketConn(c)
-	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
-		// error handling
+	addr, err := net.ResolveUDPAddr("udp", "224.42.42.1:1235")
+	if err != nil {
+		log.Fatal(err)
 	}
+	l, err := net.ListenMulticastUDP("udp", nil, addr)
+	l.SetReadBuffer(maxDatagramSize)
+
+	go func() {
+		for {
+			b := make([]byte, maxDatagramSize)
+			n, src, err := l.ReadFromUDP(b)
+			if err != nil {
+				log.Fatal("ReadFromUDP failed:", err)
+			}
+
+			//print received data
+			log.Println(n, "bytes read from", src)
+			log.Println(b[:n])
+		}
+	}()
 
 	r, _ := ifat.Addrs()
 
@@ -117,9 +132,54 @@ func main() {
 		aa = a
 	}
 
-	session, err := quic.Dial(c, aa, "224.42.42.1:1235", tlsconf, &qconf)
+	//go udpReader(p, " Multicast ", " 224.42.42.1 ")
 
-	print(session)
+	roundTripper := &http3.RoundTripper{
+		//Ifat:            ifat,
+		//MultiAddr:       "224.42.42.1:1235",
+		TLSClientConfig: tlsconf,
+		QuicConfig:      &qconf,
+	}
+	defer roundTripper.Close()
+	hclient := &http.Client{
+		Transport: roundTripper,
+	}
+
+	println("start ")
+	println(c)
+	println(aa)
+	println(tlsconf)
+	/*
+		session, err := quic.dialMulti(c, aa, "224.42.42.1:1235", tlsconf, &qconf)
+
+		fmt.Println("Client started multisession")
+
+		fmt.Println(session.ConnectionState)
+
+		sendStream, err := session.OpenStream()
+		if err != nil {
+			panic(err)
+		}
+
+		//go multicast.Listen(srvAddr, msgHandler)
+
+		defer sendStream.Close()
+
+		go func() {
+			for {
+				sendStream.Write([]byte("Ping from client\n"))
+
+				answer, err := bufio.NewReader(sendStream).ReadString('\n')
+				if err != nil {
+					panic(err)
+				}
+
+				fmt.Print("CLIENT: Server replied: " + answer)
+
+				time.Sleep(time.Second)
+			}
+		}()
+	*/
 
 	var wg sync.WaitGroup
 	wg.Add(len(urls))
@@ -147,6 +207,31 @@ func main() {
 		}(addr)
 	}
 	wg.Wait()
+}
+
+func udpReader(c *ipv4.PacketConn, ifname, ifaddr string) {
+
+	log.Printf("udpReader: reading from '%s' on '%s'", ifaddr, ifname)
+
+	defer c.Close()
+
+	buf := make([]byte, 10000)
+
+	for {
+		n, cm, _, err := c.ReadFrom(buf)
+		if err != nil {
+			log.Printf("udpReader: ReadFrom: error %v", err)
+			break
+		}
+
+		// make a copy because we will overwrite buf
+		b := make([]byte, n)
+		copy(b, buf)
+
+		log.Printf("udpReader: recv %d bytes from %s to %s on %s", n, cm.Src, cm.Dst, ifname)
+	}
+
+	log.Printf("udpReader: exiting '%s'", ifname)
 }
 
 const keyBits = 1024

@@ -2,8 +2,6 @@ package quic
 
 import (
 	"net"
-
-	"golang.org/x/net/ipv4"
 )
 
 // A sendConn allows sending using a simple Write() on a non-connected packet conn.
@@ -30,21 +28,25 @@ type conn struct {
 type multiConn struct {
 	conn net.PacketConn
 
-	mConn ipv4.PacketConn
+	mConn net.UDPConn
 
 	remoteAddr net.Addr
+
+	multiAddr net.Addr
 }
 
 var _ sendConn = &conn{}
+var _ multiSendConn = &multiConn{}
 
 func newSendConn(c net.PacketConn, remote net.Addr) sendConn {
 
 	return &conn{PacketConn: c, remoteAddr: remote}
 }
 
-func newSendMultiConn(c net.PacketConn, mConn ipv4.PacketConn, remote net.Addr) multiSendConn {
+func newSendMultiConn(c net.PacketConn, mConn net.UDPConn, remote net.Addr, multi net.Addr) multiSendConn {
 
-	return &multiConn{conn: c, mConn: mConn, remoteAddr: remote}
+	return &multiConn{conn: c, mConn: mConn, remoteAddr: remote, multiAddr: multi}
+	//return &conn{PacketConn: c, remoteAddr: remote}
 }
 
 func (c *conn) Write(p []byte) error {
@@ -54,8 +56,15 @@ func (c *conn) Write(p []byte) error {
 
 func (c *multiConn) Write(p []byte) error {
 	_, err := c.conn.WriteTo(p, c.remoteAddr)
+	if err != nil {
+		return err
+	}
 
-	_, err = c.mConn.WriteTo(p, nil, c.mConn.LocalAddr())
+	_, err = c.mConn.Write(p)
+	if err != nil {
+		println(" ERROR multi " + err.Error())
+		return err
+	}
 
 	return err
 }
@@ -79,5 +88,5 @@ func (c *multiConn) LocalAddr() net.Addr {
 }
 
 func (c *multiConn) RemoteAddr() net.Addr {
-	return c.RemoteAddr()
+	return c.remoteAddr
 }

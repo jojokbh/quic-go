@@ -103,6 +103,24 @@ func (s *Server) ListenAndServeTLS(config *tls.Config) error {
 	return s.serveImpl(config, nil)
 }
 
+// ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
+func (s *Server) ListenAndServeTLSMulti(config *tls.Config, ifat *net.Interface) error {
+	/*
+		var err error
+		certs := make([]tls.Certificate, 1)
+		certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return err
+		}
+		// We currently only use the cert-related stuff from tls.Config,
+		// so we don't need to make a full copy.
+		config := &tls.Config{
+			Certificates: certs,
+		}
+	*/
+	return s.serveImplMulti(config, ifat, nil)
+}
+
 // Serve an existing UDP connection.
 // It is possible to reuse the same connection for outgoing connections.
 // Closing the server does not close the packet conn.
@@ -198,8 +216,10 @@ func (s *Server) serveImplMulti(tlsConf *tls.Config, ifat *net.Interface, conn n
 
 	var ln quic.EarlyListener
 	if conn == nil {
-		ln, err = quicListenMultiAddr("", s.MultiCast.Addr, tlsConf, ifat, s.QuicConfig)
+		println("Listen multi " + s.MultiCast.Addr)
+		ln, err = quicListenMultiAddr(s.UniCast.Addr, s.MultiCast.Addr, tlsConf, ifat, s.QuicConfig)
 	} else {
+		println("Listen uni")
 		ln, err = quicListen(conn, tlsConf, s.QuicConfig)
 	}
 	if err != nil {

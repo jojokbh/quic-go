@@ -130,6 +130,10 @@ func setupHandler(www string, trace bool) http.Handler {
 			0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
 		})
 	})
+	mux.HandleFunc("/demo/text", func(w http.ResponseWriter, r *http.Request) {
+		// Small 40x40 png
+		w.Write([]byte("Hello world!"))
+	})
 
 	mux.HandleFunc("/demo/tiles", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "<html><head><style>img{width:40px;height:40px;}</style></head><body>")
@@ -224,7 +228,7 @@ func main() {
 	logger.SetLogTimeFormat("")
 
 	if len(bs) == 0 {
-		bs = binds{"localhost:6121"}
+		bs = binds{"localhost:8081"}
 	}
 
 	handler := setupHandler(*www, *trace)
@@ -260,8 +264,8 @@ func main() {
 					MultiCast:  &http.Server{Handler: multicastHandler, Addr: "224.42.42.1:1235"},
 					QuicConfig: quicConf,
 				}
-
-				err = server.ListenAndServeTLS(getCert())
+				println("ListenMulti")
+				err = server.ListenAndServeTLSMulti(getCert(), ifat)
 			}
 			if err != nil {
 				fmt.Println(err)

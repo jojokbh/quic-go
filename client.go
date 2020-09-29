@@ -12,6 +12,7 @@ import (
 	"github.com/jojokbh/quic-go/internal/protocol"
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/logging"
+	"golang.org/x/net/ipv4"
 )
 
 type client struct {
@@ -79,6 +80,40 @@ func DialAddrEarly(
 	return sess, nil
 }
 
+// DialAddrEarly establishes a new 0-RTT QUIC connection to a server.
+// It uses a new UDP connection and closes this connection when the QUIC session is closed.
+// The hostname for SNI is taken from the given address.
+// The tls.Config.CipherSuites allows setting of TLS 1.3 cipher suites.
+func DialMltiAddrEarly(
+	addr string,
+	multiAddr string,
+	tlsConf *tls.Config,
+	ifat *net.Interface,
+	config *Config,
+) (EarlySession, error) {
+	sess, err := dialMultiAddrContext(context.Background(), addr, multiAddr, tlsConf, ifat, config, true)
+	if err != nil {
+		return nil, err
+	}
+
+	utils.Logger.WithPrefix(utils.DefaultLogger, "client").Debugf("Returning early session")
+	return sess, nil
+}
+
+// DialAddrContext establishes a new QUIC connection to a server using the provided context.
+// See DialAddr for details.
+func DialMultiAddrContext(
+	ctx context.Context,
+	addr string,
+	multiAddr string,
+	tlsConf *tls.Config,
+	ifat *net.Interface,
+	config *Config,
+) (Session, error) {
+	//return dialAddrContext(ctx, addr, ifat, tlsConf, config, false)
+	return dialAddrContext(ctx, addr, tlsConf, config, false)
+}
+
 // DialAddrContext establishes a new QUIC connection to a server using the provided context.
 // See DialAddr for details.
 func DialAddrContext(
@@ -90,6 +125,45 @@ func DialAddrContext(
 	return dialAddrContext(ctx, addr, tlsConf, config, false)
 }
 
+func dialMultiAddrContext(
+	ctx context.Context,
+	addr string,
+	multiAddr string,
+	tlsConf *tls.Config,
+	ifat *net.Interface,
+	config *Config,
+	use0RTT bool,
+) (quicSession, error) {
+
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+	if err != nil {
+		return nil, err
+	}
+	dialContext(ctx, udpConn, udpAddr, addr, tlsConf, config, use0RTT, true)
+
+	group := net.ParseIP(multiAddr)
+
+	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	multiUdpConn, err := net.ListenUDP("udp", multiUdpAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	p := ipv4.NewPacketConn(multiUdpConn)
+	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
+		// error handling
+	}
+
+	return dialContext(ctx, udpConn, udpAddr, addr, tlsConf, config, use0RTT, true)
+}
 func dialAddrContext(
 	ctx context.Context,
 	addr string,

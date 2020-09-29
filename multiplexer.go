@@ -8,7 +8,6 @@ import (
 
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/logging"
-	"golang.org/x/net/ipv4"
 )
 
 var (
@@ -18,7 +17,7 @@ var (
 
 type multiplexer interface {
 	AddConn(c net.PacketConn, connIDLen int, statelessResetKey []byte, tracer logging.Tracer) (packetHandlerManager, error)
-	AddMultiConn(c net.PacketConn, m *ipv4.PacketConn, connIDLen int, statelessResetKey []byte, tracer logging.Tracer) (packetHandlerManager, error)
+	AddMultiConn(c net.PacketConn, m *net.UDPConn, connIDLen int, statelessResetKey []byte, tracer logging.Tracer) (packetHandlerManager, error)
 	RemoveConn(net.PacketConn) error
 }
 
@@ -103,7 +102,7 @@ func (m *connMultiplexer) RemoveConn(c net.PacketConn) error {
 
 func (m *connMultiplexer) AddMultiConn(
 	c net.PacketConn,
-	mcon *ipv4.PacketConn,
+	mcon *net.UDPConn,
 	connIDLen int,
 	statelessResetKey []byte,
 	tracer logging.Tracer,

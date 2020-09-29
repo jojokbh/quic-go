@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -22,6 +23,10 @@ type roundTripCloser interface {
 // RoundTripper implements the http.RoundTripper interface
 type RoundTripper struct {
 	mutex sync.Mutex
+
+	MultiAddr string
+
+	Ifat *net.Interface
 
 	// DisableCompression, if true, prevents the Transport from
 	// requesting compression with an "Accept-Encoding: gzip"
@@ -130,16 +135,32 @@ func (r *RoundTripper) getClient(hostname string, onlyCached bool) (http.RoundTr
 		if onlyCached {
 			return nil, ErrNoCachedConn
 		}
-		client = newClient(
-			hostname,
-			r.TLSClientConfig,
-			&roundTripperOpts{
-				DisableCompression: r.DisableCompression,
-				MaxHeaderBytes:     r.MaxResponseHeaderBytes,
-			},
-			r.QuicConfig,
-			r.Dial,
-		)
+		if len(r.MultiAddr) > 0 {
+			println("Multiclient")
+			client = newMultiClient(
+				hostname,
+				r.MultiAddr,
+				r.TLSClientConfig,
+				r.Ifat,
+				&roundTripperOpts{
+					DisableCompression: r.DisableCompression,
+					MaxHeaderBytes:     r.MaxResponseHeaderBytes,
+				},
+				r.QuicConfig,
+				r.Dial,
+			)
+		} else {
+			client = newClient(
+				hostname,
+				r.TLSClientConfig,
+				&roundTripperOpts{
+					DisableCompression: r.DisableCompression,
+					MaxHeaderBytes:     r.MaxResponseHeaderBytes,
+				},
+				r.QuicConfig,
+				r.Dial,
+			)
+		}
 		r.clients[hostname] = client
 	}
 	return client, nil
