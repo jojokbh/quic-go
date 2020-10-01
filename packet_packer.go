@@ -398,6 +398,7 @@ func (p *packetPacker) packCoalescedPacket(buffer *packetBuffer, maxPacketSize p
 // It should be called after the handshake is confirmed.
 func (p *packetPacker) PackPacket() (*packedPacket, error) {
 	buffer := getPacketBuffer()
+
 	contents, err := p.maybeAppendAppDataPacket(buffer, p.maxPacketSize)
 	if err != nil || contents == nil {
 		buffer.Release()
@@ -729,6 +730,8 @@ func (p *packetPacker) appendPacket(
 
 	raw := buffer.Data
 	// encrypt the packet
+	println("No encryption")
+	fmt.Println(raw)
 	raw = raw[:buf.Len()]
 	_ = sealer.Seal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
 	raw = raw[0 : buf.Len()+sealer.Overhead()]

@@ -34,7 +34,7 @@ const (
 )
 
 func main() {
-	verbose := flag.Bool("v", false, "verbose")
+	verbose := flag.Bool("v", true, "verbose")
 	quiet := flag.Bool("q", false, "don't print the data")
 	keyLogFile := flag.String("keylog", "", "key log file")
 	//insecure := flag.Bool("insecure", true, "skip certificate verification")
@@ -141,6 +141,7 @@ func main() {
 		QuicConfig:      &qconf,
 	}
 	defer roundTripper.Close()
+
 	hclient := &http.Client{
 		Transport: roundTripper,
 	}
@@ -207,6 +208,7 @@ func main() {
 		}(addr)
 	}
 	wg.Wait()
+
 }
 
 func udpReader(c *ipv4.PacketConn, ifname, ifaddr string) {

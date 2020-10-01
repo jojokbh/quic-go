@@ -4,10 +4,10 @@ type sendQueue struct {
 	queue       chan *packetBuffer
 	closeCalled chan struct{} // runStopped when Close() is called
 	runStopped  chan struct{} // runStopped when the run loop returns
-	conn        sendConn
+	conn        multiSendConn
 }
 
-func newSendQueue(conn sendConn) *sendQueue {
+func newSendQueue(conn multiSendConn) *sendQueue {
 	s := &sendQueue{
 		conn:        conn,
 		runStopped:  make(chan struct{}),

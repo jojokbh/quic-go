@@ -28,7 +28,7 @@ type conn struct {
 type multiConn struct {
 	conn net.PacketConn
 
-	mConn net.UDPConn
+	mConn *net.UDPConn
 
 	remoteAddr net.Addr
 
@@ -43,7 +43,7 @@ func newSendConn(c net.PacketConn, remote net.Addr) sendConn {
 	return &conn{PacketConn: c, remoteAddr: remote}
 }
 
-func newSendMultiConn(c net.PacketConn, mConn net.UDPConn, remote net.Addr, multi net.Addr) multiSendConn {
+func newSendMultiConn(c net.PacketConn, mConn *net.UDPConn, remote net.Addr, multi net.Addr) multiSendConn {
 
 	return &multiConn{conn: c, mConn: mConn, remoteAddr: remote, multiAddr: multi}
 	//return &conn{PacketConn: c, remoteAddr: remote}
@@ -59,7 +59,8 @@ func (c *multiConn) Write(p []byte) error {
 	if err != nil {
 		return err
 	}
-
+	println("Send conn ")
+	println(string(p))
 	_, err = c.mConn.Write(p)
 	if err != nil {
 		println(" ERROR multi " + err.Error())

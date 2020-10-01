@@ -63,7 +63,7 @@ type baseServer struct {
 	config  *Config
 
 	conn      net.PacketConn
-	multiConn net.UDPConn
+	multiConn *net.UDPConn
 	// If the server is started with ListenAddr, we create a packet conn.
 	// If it is started with Listen, we take a packet conn as a parameter.
 	createdPacketConn      bool
@@ -306,7 +306,7 @@ func ListenMulti(conn net.PacketConn, multiConn *net.UDPConn, tlsConf *tls.Confi
 	}
 	s := &baseServer{
 		conn:                conn,
-		multiConn:           *multiConn,
+		multiConn:           multiConn,
 		tlsConf:             tlsConf,
 		config:              config,
 		tokenGenerator:      tokenGenerator,

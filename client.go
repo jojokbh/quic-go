@@ -135,6 +135,7 @@ func dialMultiAddrContext(
 	use0RTT bool,
 ) (quicSession, error) {
 
+	//OLD
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
@@ -145,24 +146,70 @@ func dialMultiAddrContext(
 	}
 	dialContext(ctx, udpConn, udpAddr, addr, tlsConf, config, use0RTT, true)
 
-	group := net.ParseIP(multiAddr)
+	//group := net.ParseIP(multiAddr)
+
+	/*
+		multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
+		if err != nil {
+			return nil, err
+		}
+
+		multiUdpConn, err := net.ListenUDP("udp", multiUdpAddr)
+		if err != nil {
+			return nil, err
+		}
+			p := ipv4.NewPacketConn(multiUdpConn)
+			if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
+				// error handling
+			}
+	*/
+	//END old
+
+	//NEW
+	fmt.Printf("a %s m: %s \n", addr, multiAddr)
+
+	c, err := net.ListenPacket("udp4", multiAddr)
+	if err != nil {
+		println("Error #1 " + err.Error())
+	}
+
+	defer c.Close()
+
+	mHost, _, err := net.SplitHostPort(multiAddr)
+	if err != nil {
+		println("Split host error " + err.Error())
+	}
+
+	group := net.ParseIP(mHost)
+
+	p := ipv4.NewPacketConn(c)
+	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
+		// error handling
+		println("Error #2 " + err.Error())
+	}
 
 	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
 	if err != nil {
+		println("Error #3 " + err.Error())
 		return nil, err
 	}
 
-	multiUdpConn, err := net.ListenUDP("udp", multiUdpAddr)
+	multiConn, err := net.DialUDP("udp", nil, multiUdpAddr)
 	if err != nil {
+		println("Error #4 " + err.Error())
 		return nil, err
 	}
 
-	p := ipv4.NewPacketConn(multiUdpConn)
-	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
-		// error handling
-	}
+	/*
+		serv, err := ListenMulti(conn, multiConn, tlsConf, config, acceptEarly)
+		if err != nil {
+			println("Error #6 " + err.Error())
+			return nil, err
+		}
+	*/
+	//end New
 
-	return dialContext(ctx, udpConn, udpAddr, addr, tlsConf, config, use0RTT, true)
+	return dialMultiContext(ctx, udpConn, multiConn, udpAddr, multiUdpAddr, addr, tlsConf, config, use0RTT, true)
 }
 func dialAddrContext(
 	ctx context.Context,
@@ -261,6 +308,44 @@ func dialContext(
 	return c.session, nil
 }
 
+func dialMultiContext(
+	ctx context.Context,
+	pconn net.PacketConn,
+	mconn *net.UDPConn,
+	remoteAddr net.Addr,
+	multiAddr net.Addr,
+	host string,
+	tlsConf *tls.Config,
+	config *Config,
+	use0RTT bool,
+	createdPacketConn bool,
+) (quicSession, error) {
+	if tlsConf == nil {
+		return nil, errors.New("quic: tls.Config not set")
+	}
+	if err := validateConfig(config); err != nil {
+		return nil, err
+	}
+	config = populateClientConfig(config, createdPacketConn)
+	packetHandlers, err := getMultiplexer().AddMultiConn(pconn, mconn, config.ConnectionIDLength, config.StatelessResetKey, config.Tracer)
+	if err != nil {
+		return nil, err
+	}
+	c, err := newMultiClient(pconn, mconn, remoteAddr, multiAddr, config, tlsConf, host, use0RTT, createdPacketConn)
+	if err != nil {
+		return nil, err
+	}
+	c.packetHandlers = packetHandlers
+
+	if c.config.Tracer != nil {
+		c.tracer = c.config.Tracer.TracerForConnection(protocol.PerspectiveClient, c.destConnID)
+	}
+	if err := c.dial(ctx); err != nil {
+		return nil, err
+	}
+	return c.session, nil
+}
+
 func newClient(
 	pconn net.PacketConn,
 	remoteAddr net.Addr,
@@ -307,6 +392,64 @@ func newClient(
 		srcConnID:         srcConnID,
 		destConnID:        destConnID,
 		conn:              newSendConn(pconn, remoteAddr),
+		createdPacketConn: createdPacketConn,
+		use0RTT:           use0RTT,
+		tlsConf:           tlsConf,
+		config:            config,
+		version:           config.Versions[0],
+		handshakeChan:     make(chan struct{}),
+		logger:            utils.DefaultLogger.WithPrefix("client"),
+	}
+	return c, nil
+}
+func newMultiClient(
+	pconn net.PacketConn,
+	mconn *net.UDPConn,
+	remoteAddr net.Addr,
+	multiAddr net.Addr,
+	config *Config,
+	tlsConf *tls.Config,
+	host string,
+	use0RTT bool,
+	createdPacketConn bool,
+) (*client, error) {
+	if tlsConf == nil {
+		tlsConf = &tls.Config{}
+	}
+	if tlsConf.ServerName == "" {
+		sni := host
+		if strings.IndexByte(sni, ':') != -1 {
+			var err error
+			sni, _, err = net.SplitHostPort(sni)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		tlsConf.ServerName = sni
+	}
+
+	// check that all versions are actually supported
+	if config != nil {
+		for _, v := range config.Versions {
+			if !protocol.IsValidVersion(v) {
+				return nil, fmt.Errorf("%s is not a valid QUIC version", v)
+			}
+		}
+	}
+
+	srcConnID, err := generateConnectionID(config.ConnectionIDLength)
+	if err != nil {
+		return nil, err
+	}
+	destConnID, err := generateConnectionIDForInitial()
+	if err != nil {
+		return nil, err
+	}
+	c := &client{
+		srcConnID:         srcConnID,
+		destConnID:        destConnID,
+		conn:              newSendMultiConn(pconn, mconn, remoteAddr, multiAddr),
 		createdPacketConn: createdPacketConn,
 		use0RTT:           use0RTT,
 		tlsConf:           tlsConf,
