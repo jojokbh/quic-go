@@ -18,7 +18,8 @@ import (
 type client struct {
 	mutex sync.Mutex
 
-	conn sendConn
+	conn  sendConn
+	mconn *net.UDPConn
 	// If the client is created with DialAddr, we create a packet conn.
 	// If it is started with Dial, we take a packet conn as a parameter.
 	createdPacketConn bool
@@ -84,7 +85,7 @@ func DialAddrEarly(
 // It uses a new UDP connection and closes this connection when the QUIC session is closed.
 // The hostname for SNI is taken from the given address.
 // The tls.Config.CipherSuites allows setting of TLS 1.3 cipher suites.
-func DialMltiAddrEarly(
+func DialMultiAddrEarly(
 	addr string,
 	multiAddr string,
 	tlsConf *tls.Config,
@@ -95,7 +96,7 @@ func DialMltiAddrEarly(
 	if err != nil {
 		return nil, err
 	}
-
+	println("Dial mltiaddrEarly")
 	utils.Logger.WithPrefix(utils.DefaultLogger, "client").Debugf("Returning early session")
 	return sess, nil
 }
@@ -111,7 +112,7 @@ func DialMultiAddrContext(
 	config *Config,
 ) (Session, error) {
 	//return dialAddrContext(ctx, addr, ifat, tlsConf, config, false)
-	return dialAddrContext(ctx, addr, tlsConf, config, false)
+	return dialMultiAddrContext(ctx, addr, multiAddr, tlsConf, ifat, config, false)
 }
 
 // DialAddrContext establishes a new QUIC connection to a server using the provided context.
@@ -135,7 +136,7 @@ func dialMultiAddrContext(
 	use0RTT bool,
 ) (quicSession, error) {
 
-	//OLD
+	//Unicast
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
@@ -144,28 +145,7 @@ func dialMultiAddrContext(
 	if err != nil {
 		return nil, err
 	}
-	dialContext(ctx, udpConn, udpAddr, addr, tlsConf, config, use0RTT, true)
 
-	//group := net.ParseIP(multiAddr)
-
-	/*
-		multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
-		if err != nil {
-			return nil, err
-		}
-
-		multiUdpConn, err := net.ListenUDP("udp", multiUdpAddr)
-		if err != nil {
-			return nil, err
-		}
-			p := ipv4.NewPacketConn(multiUdpConn)
-			if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
-				// error handling
-			}
-	*/
-	//END old
-
-	//NEW
 	fmt.Printf("a %s m: %s \n", addr, multiAddr)
 
 	c, err := net.ListenPacket("udp4", multiAddr)
@@ -200,17 +180,9 @@ func dialMultiAddrContext(
 		return nil, err
 	}
 
-	/*
-		serv, err := ListenMulti(conn, multiConn, tlsConf, config, acceptEarly)
-		if err != nil {
-			println("Error #6 " + err.Error())
-			return nil, err
-		}
-	*/
-	//end New
-
 	return dialMultiContext(ctx, udpConn, multiConn, udpAddr, multiUdpAddr, addr, tlsConf, config, use0RTT, true)
 }
+
 func dialAddrContext(
 	ctx context.Context,
 	addr string,
@@ -448,6 +420,7 @@ func newMultiClient(
 	}
 	c := &client{
 		srcConnID:         srcConnID,
+		mconn:             mconn,
 		destConnID:        destConnID,
 		conn:              newSendMultiConn(pconn, mconn, remoteAddr, multiAddr),
 		createdPacketConn: createdPacketConn,
@@ -468,8 +441,10 @@ func (c *client) dial(ctx context.Context) error {
 	}
 
 	c.mutex.Lock()
+
 	c.session = newClientSession(
 		c.conn,
+		c.mconn,
 		c.packetHandlers,
 		c.destConnID,
 		c.srcConnID,
@@ -483,6 +458,7 @@ func (c *client) dial(ctx context.Context) error {
 		c.logger,
 		c.version,
 	)
+
 	c.mutex.Unlock()
 	c.packetHandlers.Add(c.srcConnID, c.session)
 

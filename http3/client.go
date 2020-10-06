@@ -29,7 +29,7 @@ var defaultQuicConfig = &quic.Config{
 }
 
 var dialAddr = quic.DialAddrEarly
-var dialMultiAddr = quic.DialMltiAddrEarly
+var dialMultiAddr = quic.DialMultiAddrEarly
 
 type roundTripperOpts struct {
 	DisableCompression bool

@@ -34,7 +34,7 @@ type connMultiplexer struct {
 	mutex sync.Mutex
 
 	conns                   map[string] /* LocalAddr().String() */ connManager
-	newPacketHandlerManager func(net.PacketConn, int, []byte, logging.Tracer, utils.Logger) packetHandlerManager // so it can be replaced in the tests
+	newPacketHandlerManager func(net.PacketConn, *net.UDPConn, int, []byte, logging.Tracer, utils.Logger) packetHandlerManager // so it can be replaced in the tests
 
 	logger utils.Logger
 }
@@ -65,7 +65,7 @@ func (m *connMultiplexer) AddConn(
 	connIndex := c.LocalAddr().Network() + " " + c.LocalAddr().String() + " " + mconstring
 	p, ok := m.conns[connIndex]
 	if !ok {
-		manager := m.newPacketHandlerManager(c, connIDLen, statelessResetKey, tracer, m.logger)
+		manager := m.newPacketHandlerManager(c, nil, connIDLen, statelessResetKey, tracer, m.logger)
 		p = connManager{
 			connIDLen:         connIDLen,
 			statelessResetKey: statelessResetKey,
@@ -114,7 +114,7 @@ func (m *connMultiplexer) AddMultiConn(
 	connIndex := c.LocalAddr().Network() + " " + c.LocalAddr().String() + " " + mconstring
 	p, ok := m.conns[connIndex]
 	if !ok {
-		manager := m.newPacketHandlerManager(c, connIDLen, statelessResetKey, tracer, m.logger)
+		manager := m.newPacketHandlerManager(c, mcon, connIDLen, statelessResetKey, tracer, m.logger)
 		p = connManager{
 			connIDLen:         connIDLen,
 			statelessResetKey: statelessResetKey,

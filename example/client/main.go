@@ -34,7 +34,7 @@ const (
 )
 
 func main() {
-	verbose := flag.Bool("v", true, "verbose")
+	verbose := flag.Bool("v", false, "verbose")
 	quiet := flag.Bool("q", false, "don't print the data")
 	keyLogFile := flag.String("keylog", "", "key log file")
 	//insecure := flag.Bool("insecure", true, "skip certificate verification")
@@ -118,7 +118,7 @@ func main() {
 
 			//print received data
 			log.Println(n, "bytes read from", src)
-			log.Println(b[:n])
+			log.Println(string(b[:n]))
 		}
 	}()
 
@@ -135,8 +135,8 @@ func main() {
 	//go udpReader(p, " Multicast ", " 224.42.42.1 ")
 
 	roundTripper := &http3.RoundTripper{
-		//Ifat:            ifat,
-		//MultiAddr:       "224.42.42.1:1235",
+		Ifat:            ifat,
+		MultiAddr:       "224.42.42.1:1235",
 		TLSClientConfig: tlsconf,
 		QuicConfig:      &qconf,
 	}

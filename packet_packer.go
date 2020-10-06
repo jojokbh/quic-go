@@ -262,6 +262,8 @@ func (p *packetPacker) PackConnectionClose(quicErr *qerr.QuicError) (*coalescedP
 		} else {
 			hdr = p.getLongHeader(encLevel)
 		}
+
+		println("close")
 		c, err := p.appendPacket(buffer, hdr, payload, encLevel, sealer)
 		if err != nil {
 			return nil, err
@@ -404,6 +406,8 @@ func (p *packetPacker) PackPacket() (*packedPacket, error) {
 		buffer.Release()
 		return nil, err
 	}
+	println("Packet pack ")
+	fmt.Println(string(buffer.Data))
 	return &packedPacket{
 		buffer:         buffer,
 		packetContents: contents,
@@ -475,6 +479,8 @@ func (p *packetPacker) maybeAppendCryptoPacket(buffer *packetBuffer, maxPacketSi
 		payload.frames = []ackhandler.Frame{{Frame: cf}}
 		payload.length += cf.Length(p.version)
 	}
+
+	println("Crypto")
 	return p.appendPacket(buffer, hdr, payload, encLevel, sealer)
 }
 
@@ -521,6 +527,7 @@ func (p *packetPacker) maybeAppendAppDataPacket(buffer *packetBuffer, maxPacketS
 		p.numNonAckElicitingAcks = 0
 	}
 
+	println("Data packet")
 	return p.appendPacket(buffer, header, payload, encLevel, sealer)
 }
 
@@ -674,6 +681,7 @@ func (p *packetPacker) writeSinglePacket(
 	sealer sealer,
 ) (*packedPacket, error) {
 	buffer := getPacketBuffer()
+	println("Single")
 	contents, err := p.appendPacket(buffer, header, payload, encLevel, sealer)
 	if err != nil {
 		return nil, err
@@ -730,9 +738,15 @@ func (p *packetPacker) appendPacket(
 
 	raw := buffer.Data
 	// encrypt the packet
-	println("No encryption")
-	fmt.Println(raw)
+	println("Packet number")
+	fmt.Println(header.PacketNumber)
+	println("Packet type")
+	fmt.Println(header.PacketType())
 	raw = raw[:buf.Len()]
+
+	println("No encryption")
+	fmt.Println(string(raw))
+
 	_ = sealer.Seal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
 	raw = raw[0 : buf.Len()+sealer.Overhead()]
 	// apply header protection

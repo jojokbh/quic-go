@@ -344,6 +344,7 @@ var newSession = func(
 // declare this as a variable, such that we can it mock it in the tests
 var newClientSession = func(
 	conn sendConn,
+	mconn *net.UDPConn,
 	runner sessionRunner,
 	destConnID protocol.ConnectionID,
 	srcConnID protocol.ConnectionID,
