@@ -311,6 +311,7 @@ var newSession = func(
 			onError:          s.closeLocal,
 			dropKeys:         s.dropEncryptionLevel,
 			onHandshakeComplete: func() {
+				s.sendQueue.multi = true
 				runner.Retire(clientDestConnID)
 				close(s.handshakeCompleteChan)
 			},
@@ -548,6 +549,7 @@ runLoop:
 			break runLoop
 		case <-s.handshakeCompleteChan:
 			s.handleHandshakeComplete()
+			println("handshake complete")
 		default:
 		}
 
@@ -567,6 +569,7 @@ runLoop:
 			// Only reset the timers if this packet was actually processed.
 			// This avoids modifying any state when handling undecryptable packets,
 			// which could be injected by an attacker.
+			println("Processing packet")
 			if wasProcessed := s.handlePacketImpl(p); !wasProcessed {
 				continue
 			}
@@ -770,6 +773,8 @@ func (s *session) handlePacketImpl(rp *receivedPacket) bool {
 		}
 		data = rest
 	}
+	println("handeled packet")
+	println(string(p.data))
 	p.buffer.MaybeRelease()
 	return processed
 }
@@ -843,7 +848,7 @@ func (s *session) handlePacketMultiImpl(rp *receivedPacket) bool {
 
 func (s *session) handleSinglePacket(p *receivedPacket, hdr *wire.Header) bool /* was the packet successfully processed */ {
 	var wasQueued bool
-
+	println("Handle single packet ")
 	defer func() {
 		// Put back the packet buffer if the packet wasn't queued for later decryption.
 		if !wasQueued {
@@ -1030,6 +1035,9 @@ func (s *session) handleUnpackedPacket(
 	rcvTime time.Time,
 	packetSize protocol.ByteCount, // only for logging
 ) error {
+
+	println("Handle unpacked packet ")
+
 	if len(packet.data) == 0 {
 		return qerr.NewError(qerr.ProtocolViolation, "empty packet")
 	}
@@ -1129,6 +1137,8 @@ func (s *session) handleUnpackedPacket(
 
 func (s *session) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel, destConnID protocol.ConnectionID) error {
 	var err error
+
+	println("Handle frame ")
 	wire.LogFrame(s.logger, f, false)
 	switch frame := f.(type) {
 	case *wire.CryptoFrame:
@@ -1174,12 +1184,19 @@ func (s *session) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel, d
 
 // handlePacket is called by the server with a new packet
 func (s *session) handlePacket(p *receivedPacket) {
+	println("called here")
 	// Discard packets once the amount of queued packets is larger than
 	// the channel size, protocol.MaxSessionUnprocessedPackets
 	select {
 	case s.receivedPackets <- p:
 	default:
 	}
+}
+
+// handlePacket is called by the server with a new packet
+func (s *session) handleMultiPacket(p *receivedPacket) {
+	println("called here#2")
+	s.handlePacketMultiImpl(p)
 }
 
 func (s *session) handleConnectionCloseFrame(frame *wire.ConnectionCloseFrame) {

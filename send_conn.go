@@ -7,6 +7,7 @@ import (
 // A sendConn allows sending using a simple Write() on a non-connected packet conn.
 type sendConn interface {
 	Write([]byte) error
+	WriteMulti([]byte) error
 	Close() error
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
@@ -14,6 +15,7 @@ type sendConn interface {
 
 type multiSendConn interface {
 	Write([]byte) error
+	WriteMulti([]byte) error
 	Close() error
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
@@ -54,14 +56,25 @@ func (c *conn) Write(p []byte) error {
 	return err
 }
 
+func (c *conn) WriteMulti(p []byte) error {
+	_, err := c.PacketConn.WriteTo(p, c.remoteAddr)
+	return err
+}
+
 func (c *multiConn) Write(p []byte) error {
 	_, err := c.conn.WriteTo(p, c.remoteAddr)
 	if err != nil {
 		return err
 	}
+
+	return err
+}
+
+func (c *multiConn) WriteMulti(p []byte) error {
+
 	println("Send conn ")
 	println(string(p))
-	_, err = c.mConn.Write(p)
+	_, err := c.mConn.Write(p)
 	if err != nil {
 		println(" ERROR multi " + err.Error())
 		return err

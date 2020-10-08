@@ -46,6 +46,7 @@ type quicSession interface {
 	EarlySession
 	earlySessionReady() <-chan struct{}
 	handlePacket(*receivedPacket)
+	handleMultiPacket(*receivedPacket)
 	GetVersion() protocol.VersionNumber
 	getPerspective() protocol.Perspective
 	run() error

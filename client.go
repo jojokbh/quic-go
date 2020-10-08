@@ -5,9 +5,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jojokbh/quic-go/internal/protocol"
 	"github.com/jojokbh/quic-go/internal/utils"
@@ -307,7 +309,39 @@ func dialMultiContext(
 	if err != nil {
 		return nil, err
 	}
+
 	c.packetHandlers = packetHandlers
+
+	addr, err := net.ResolveUDPAddr("udp", multiAddr.String())
+	if err != nil {
+		log.Fatal(err)
+	}
+	l, err := net.ListenMulticastUDP("udp", nil, addr)
+	l.SetReadBuffer(protocol.MaxPacketSizeIPv4)
+
+	go func() {
+		for {
+			b := make([]byte, protocol.MaxPacketSizeIPv4)
+			n, src, err := l.ReadFromUDP(b)
+			if err != nil {
+				log.Fatal("ReadFromUDP failed:", err)
+			}
+
+			//print received data
+			log.Println(n, " mulicast read from ", src)
+
+			r := &receivedPacket{}
+			buf := getPacketBuffer()
+			r.remoteAddr = remoteAddr
+			r.rcvTime = time.Now()
+			r.data = b[:n]
+			r.buffer = buf
+
+			c.session.handleMultiPacket(r)
+			log.Println(string(b[:n]))
+
+		}
+	}()
 
 	if c.config.Tracer != nil {
 		c.tracer = c.config.Tracer.TracerForConnection(protocol.PerspectiveClient, c.destConnID)

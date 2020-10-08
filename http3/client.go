@@ -162,6 +162,7 @@ func (c *client) setupSession() error {
 	if err != nil {
 		return err
 	}
+
 	//c.session.multi = c.multiSession
 	buf := &bytes.Buffer{}
 	// write the type byte
@@ -222,6 +223,13 @@ func (c *client) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	/*
+		str, err := c.session.AcceptStream(req.Context())
+		if err != nil {
+			return nil, err
+		}
+	*/
 
 	// Request Cancellation:
 	// This go routine keeps running even after RoundTrip() returns.

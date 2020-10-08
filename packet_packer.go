@@ -754,6 +754,9 @@ func (p *packetPacker) appendPacket(
 	sealer.EncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
 	buffer.Data = raw
 
+	println("Encrypted")
+	fmt.Println(string(raw))
+
 	num := p.pnManager.PopPacketNumber(encLevel)
 	if num != header.PacketNumber {
 		return nil, errors.New("packetPacker BUG: Peeked and Popped packet numbers do not match")

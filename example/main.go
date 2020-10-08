@@ -200,7 +200,7 @@ func main() {
 	verbose := flag.Bool("v", false, "verbose")
 	bs := binds{}
 	flag.Var(&bs, "bind", "bind to")
-	www := flag.String("www", "", "www data")
+	www := flag.String("www", "/home/jones/Videos", "www data")
 	tcp := flag.Bool("tcp", false, "also listen on TCP")
 	trace := flag.Bool("trace", false, "enable quic-trace")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
@@ -228,7 +228,7 @@ func main() {
 	logger.SetLogTimeFormat("")
 
 	if len(bs) == 0 {
-		bs = binds{"localhost:8081"}
+		bs = binds{"192.168.1.204:8081"}
 	}
 
 	handler := setupHandler(*www, *trace)

@@ -40,7 +40,7 @@ func main() {
 	//insecure := flag.Bool("insecure", true, "skip certificate verification")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
 	flag.Parse()
-	urls := [1]string{"https://localhost:8081/demo/text"}
+	urls := [8]string{"https://ottb-ses.redirectme.net:8081/index.m3u8", "https://ottb-ses.redirectme.net:8081/index0.ts", "https://ottb-ses.redirectme.net:8081/index1.ts", "https://ottb-ses.redirectme.net:8081/index2.ts", "https://ottb-ses.redirectme.net:8081/index3.ts", "https://ottb-ses.redirectme.net:8081/index4.ts", "https://ottb-ses.redirectme.net:8081/index5.ts", "https://ottb-ses.redirectme.net:8081/index6.ts"}
 	//urls := [2]string{"https://localhost:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 	//urls := [4]string{"https://ottb-ses.redirectme.net:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 
@@ -100,28 +100,29 @@ func main() {
 		println("Error listen unicast " + err.Error())
 	}
 	defer c.Close()
-
-	addr, err := net.ResolveUDPAddr("udp", "224.42.42.1:1235")
-	if err != nil {
-		log.Fatal(err)
-	}
-	l, err := net.ListenMulticastUDP("udp", nil, addr)
-	l.SetReadBuffer(maxDatagramSize)
-
-	go func() {
-		for {
-			b := make([]byte, maxDatagramSize)
-			n, src, err := l.ReadFromUDP(b)
-			if err != nil {
-				log.Fatal("ReadFromUDP failed:", err)
-			}
-
-			//print received data
-			log.Println(n, "bytes read from", src)
-			log.Println(string(b[:n]))
+	/*
+		addr, err := net.ResolveUDPAddr("udp", "224.42.42.1:1235")
+		if err != nil {
+			log.Fatal(err)
 		}
-	}()
 
+		l, err := net.ListenMulticastUDP("udp", nil, addr)
+		l.SetReadBuffer(maxDatagramSize)
+
+		go func() {
+			for {
+				b := make([]byte, maxDatagramSize)
+				n, src, err := l.ReadFromUDP(b)
+				if err != nil {
+					log.Fatal("ReadFromUDP failed:", err)
+				}
+
+				//print received data
+				log.Println(n, "bytes read from", src)
+				log.Println(string(b[:n]))
+			}
+		}()
+	*/
 	r, _ := ifat.Addrs()
 
 	var aa net.Addr
@@ -133,6 +134,20 @@ func main() {
 	}
 
 	//go udpReader(p, " Multicast ", " 224.42.42.1 ")
+
+	qconf.HandshakeTimeout = time.Second * 30
+	/*
+	   //version expiriment
+	   	var v []protocol.VersionNumber
+
+	   	var vv protocol.VersionNumber
+
+	   	vv = 0x51303430
+
+	   	fv := append(v, vv)
+
+	   	qconf.Versions = fv
+	*/
 
 	roundTripper := &http3.RoundTripper{
 		Ifat:            ifat,

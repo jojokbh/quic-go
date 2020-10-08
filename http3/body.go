@@ -4,12 +4,29 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/jojokbh/quic-go/internal/protocol"
+
 	"github.com/jojokbh/quic-go"
 )
 
 // The body of a http.Request or http.Response.
 type body struct {
 	str quic.Stream
+
+	// only set for the http.Response
+	// The channel is closed when the user is done with this response:
+	// either when Read() errors, or when Close() is called.
+	reqDone       chan<- struct{}
+	reqDoneClosed bool
+
+	onFrameError func()
+
+	bytesRemainingInFrame uint64
+}
+
+// The body of a http.Request or http.Response.
+type multiBody struct {
+	sess quic.Session
 
 	// only set for the http.Response
 	// The channel is closed when the user is done with this response:
@@ -34,6 +51,13 @@ func newRequestBody(str quic.Stream, onFrameError func()) *body {
 func newResponseBody(str quic.Stream, done chan<- struct{}, onFrameError func()) *body {
 	return &body{
 		str:          str,
+		onFrameError: onFrameError,
+		reqDone:      done,
+	}
+}
+func newResponseMultiBody(sess quic.Session, done chan<- struct{}, onFrameError func()) *multiBody {
+	return &multiBody{
+		sess:         sess,
 		onFrameError: onFrameError,
 		reqDone:      done,
 	}
@@ -81,6 +105,50 @@ func (r *body) readImpl(b []byte) (int, error) {
 	r.bytesRemainingInFrame -= uint64(n)
 	return n, err
 }
+func (r *multiBody) Read(b []byte) (int, error) {
+	n, err := r.readImpl(b)
+	if err != nil {
+		r.requestDone()
+	}
+	return n, err
+}
+
+func (r *multiBody) readImpl(b []byte) (int, error) {
+	/*
+		if r.bytesRemainingInFrame == 0 {
+				parseLoop:
+					for {
+							frame, err := parseNextFrame(r.str)
+							if err != nil {
+								return 0, err
+							}
+							switch f := frame.(type) {
+							case *headersFrame:
+								// skip HEADERS frames
+								continue
+							case *dataFrame:
+								r.bytesRemainingInFrame = f.Length
+								break parseLoop
+							default:
+								r.onFrameError()
+								// parseNextFrame skips over unknown frame types
+								// Therefore, this condition is only entered when we parsed another known frame type.
+								return 0, fmt.Errorf("peer sent an unexpected frame: %T", f)
+							}
+						}
+					}
+
+					var n int
+					var err error
+					if r.bytesRemainingInFrame < uint64(len(b)) {
+						n, err = r.str.Read(b[:r.bytesRemainingInFrame])
+						} else {
+							n, err = r.str.Read(b)
+						}
+						r.bytesRemainingInFrame -= uint64(n)
+	*/
+	return 0, nil
+}
 
 func (r *body) requestDone() {
 	if r.reqDoneClosed || r.reqDone == nil {
@@ -94,5 +162,20 @@ func (r *body) Close() error {
 	r.requestDone()
 	// If the EOF was read, CancelRead() is a no-op.
 	r.str.CancelRead(quic.ErrorCode(errorRequestCanceled))
+	return nil
+}
+
+func (r *multiBody) requestDone() {
+	if r.reqDoneClosed || r.reqDone == nil {
+		return
+	}
+	close(r.reqDone)
+	r.reqDoneClosed = true
+}
+
+func (r *multiBody) Close() error {
+	r.requestDone()
+	// If the EOF was read, CancelRead() is a no-op.
+	r.sess.CloseWithError(protocol.ApplicationErrorCode(99), "multibody error")
 	return nil
 }
