@@ -334,7 +334,7 @@ func dialMultiContext(
 			log.Println(n, " mulicast read from ", src)
 			counter++
 
-			if counter%30 == 0 {
+			if counter%10 == 0 {
 
 				lost++
 				print("lost packages: ")

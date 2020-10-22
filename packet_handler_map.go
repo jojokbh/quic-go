@@ -278,7 +278,7 @@ func (h *packetHandlerMap) listenMulti() {
 	defer close(h.listening)
 
 	for {
-		buffer := getPacketBuffer(true)
+		buffer := getPacketBuffer(false)
 		data := buffer.Data[:protocol.MaxReceivePacketSize]
 		// The packet size should not exceed protocol.MaxReceivePacketSize bytes
 		// If it does, we only read a truncated packet, which will then end up undecryptable

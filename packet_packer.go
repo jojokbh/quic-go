@@ -328,7 +328,7 @@ func (p *packetPacker) padPacket(buffer *packetBuffer) {
 // It should only be called before the handshake is confirmed.
 func (p *packetPacker) PackCoalescedPacket(maxPacketSize protocol.ByteCount) (*coalescedPacket, error) {
 	println("Packcoales")
-	buffer := getPacketBuffer(true)
+	buffer := getPacketBuffer(false)
 	packet, err := p.packCoalescedPacket(buffer, maxPacketSize)
 	if err != nil {
 		return nil, err
@@ -392,6 +392,7 @@ func (p *packetPacker) packCoalescedPacket(buffer *packetBuffer, maxPacketSize p
 		return nil, err
 	}
 	if contents != nil {
+		buffer.SetMulti(true)
 		packet.packets = append(packet.packets, contents)
 	}
 	return packet, nil
