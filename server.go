@@ -50,6 +50,7 @@ type quicSession interface {
 	GetVersion() protocol.VersionNumber
 	getPerspective() protocol.Perspective
 	run() error
+	runMulti() error
 	destroy(error)
 	shutdown()
 }
@@ -321,7 +322,7 @@ func ListenMulti(conn net.PacketConn, multiConn *net.UDPConn, tlsConf *tls.Confi
 		logger:              utils.DefaultLogger.WithPrefix("server"),
 		acceptEarlySessions: acceptEarly,
 	}
-	go s.run()
+	go s.runMulti()
 	sessionHandler.SetServer(s)
 	s.logger.Debugf("Listening for %s connections on %s", conn.LocalAddr().Network(), conn.LocalAddr().String())
 	return s, nil
@@ -567,6 +568,7 @@ func (s *baseServer) handlePacketImplMulti(p *receivedPacket) bool /* should the
 	s.logger.Debugf("<- Received Initial packet.")
 
 	if err := s.handleInitialImplMulti(p, hdr); err != nil {
+		println("HEREERERRE")
 		s.logger.Errorf("Error occurred handling initial packet: %s", err)
 	}
 	// Don't put the packet buffer back.
@@ -787,7 +789,7 @@ func (s *baseServer) createNewMultiSession(
 	}); !added {
 		return nil
 	}
-	go sess.run()
+	go sess.runMulti()
 	go s.handleNewSession(sess)
 	return sess
 }
@@ -814,7 +816,7 @@ func (s *baseServer) createNewSession(
 		}
 
 		sess = s.newSession(
-			newSendMultiConn(s.conn, s.multiConn, remoteAddr, s.MultiAddr()),
+			newSendConn(s.conn, remoteAddr),
 			s.sessionHandler,
 			origDestConnID,
 			retrySrcConnID,
@@ -937,7 +939,7 @@ func (s *baseServer) sendConnectionRefused(remoteAddr net.Addr, hdr *wire.Header
 
 // sendError sends the error as a response to the packet received with header hdr
 func (s *baseServer) sendError(remoteAddr net.Addr, hdr *wire.Header, sealer handshake.LongHeaderSealer, errorCode qerr.ErrorCode) error {
-	packetBuffer := getPacketBuffer()
+	packetBuffer := getPacketBuffer(false)
 	defer packetBuffer.Release()
 	buf := bytes.NewBuffer(packetBuffer.Data)
 

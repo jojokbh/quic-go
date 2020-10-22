@@ -319,6 +319,9 @@ func dialMultiContext(
 	l, err := net.ListenMulticastUDP("udp", nil, addr)
 	l.SetReadBuffer(protocol.MaxPacketSizeIPv4)
 
+	//Receive multicast data
+	counter := 0
+	lost := 0
 	go func() {
 		for {
 			b := make([]byte, protocol.MaxPacketSizeIPv4)
@@ -329,17 +332,26 @@ func dialMultiContext(
 
 			//print received data
 			log.Println(n, " mulicast read from ", src)
+			counter++
 
-			r := &receivedPacket{}
-			buf := getPacketBuffer()
-			r.remoteAddr = remoteAddr
-			r.rcvTime = time.Now()
-			r.data = b[:n]
-			r.buffer = buf
+			if counter%30 == 0 {
 
-			c.session.handleMultiPacket(r)
-			log.Println(string(b[:n]))
+				lost++
+				print("lost packages: ")
+				print(counter)
+				print("/")
+				print(lost)
+				println("")
+			} else {
+				r := &receivedPacket{}
+				buf := getPacketBuffer(false)
+				r.remoteAddr = remoteAddr
+				r.rcvTime = time.Now()
+				r.data = b[:n]
+				r.buffer = buf
 
+				c.session.handleMultiPacket(r)
+			}
 		}
 	}()
 

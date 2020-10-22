@@ -76,7 +76,10 @@ func newPacketHandlerMap(
 		logger:                     logger,
 	}
 	go m.listen()
-	go m.listenMulti()
+	if mconn != nil {
+		println("LISTEN MULTI PACKET MAP ")
+		go m.listenMulti()
+	}
 
 	if logger.Debug() {
 		go m.logUsage()
@@ -258,7 +261,7 @@ func (h *packetHandlerMap) listen() {
 	defer close(h.listening)
 
 	for {
-		buffer := getPacketBuffer()
+		buffer := getPacketBuffer(false)
 		data := buffer.Data[:protocol.MaxReceivePacketSize]
 		// The packet size should not exceed protocol.MaxReceivePacketSize bytes
 		// If it does, we only read a truncated packet, which will then end up undecryptable
@@ -275,17 +278,15 @@ func (h *packetHandlerMap) listenMulti() {
 	defer close(h.listening)
 
 	for {
-		buffer := getPacketBuffer()
+		buffer := getPacketBuffer(true)
 		data := buffer.Data[:protocol.MaxReceivePacketSize]
 		// The packet size should not exceed protocol.MaxReceivePacketSize bytes
 		// If it does, we only read a truncated packet, which will then end up undecryptable
-		n, _, err := h.mconn.ReadFrom(data)
+		_, _, err := h.mconn.ReadFrom(data)
 		if err != nil {
 			h.close(err)
 			return
 		}
-		println("multi packet ")
-		println(string(data[:n]))
 		//h.handlePacket(addr, buffer, data[:n])
 	}
 

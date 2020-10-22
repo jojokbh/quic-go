@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -17,6 +16,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,20 +30,23 @@ import (
 )
 
 const (
-	srvAddr         = "224.0.0.1:9999"
+	srvAddr         = "224.42.42.1:1235"
 	maxDatagramSize = 8192
+	hostString      = "localhost"
+	//hostString = "ottb-ses.redirectme.net"
 )
 
 func main() {
 	verbose := flag.Bool("v", false, "verbose")
-	quiet := flag.Bool("q", false, "don't print the data")
+	quiet := flag.Bool("q", true, "don't print the data")
 	keyLogFile := flag.String("keylog", "", "key log file")
 	//insecure := flag.Bool("insecure", true, "skip certificate verification")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
 	flag.Parse()
-	urls := [8]string{"https://ottb-ses.redirectme.net:8081/index.m3u8", "https://ottb-ses.redirectme.net:8081/index0.ts", "https://ottb-ses.redirectme.net:8081/index1.ts", "https://ottb-ses.redirectme.net:8081/index2.ts", "https://ottb-ses.redirectme.net:8081/index3.ts", "https://ottb-ses.redirectme.net:8081/index4.ts", "https://ottb-ses.redirectme.net:8081/index5.ts", "https://ottb-ses.redirectme.net:8081/index6.ts"}
+	//urls := [1]string{"https://" + hostString + ":8081/index6.ts"}
+	urls := [8]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts", "https://" + hostString + ":8081/index2.ts", "https://" + hostString + ":8081/index3.ts", "https://" + hostString + ":8081/index4.ts", "https://" + hostString + ":8081/index5.ts", "https://" + hostString + ":8081/index6.ts"}
 	//urls := [2]string{"https://localhost:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
-	//urls := [4]string{"https://ottb-ses.redirectme.net:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
+	//urls := [4]string{"https://"+hostString+":8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 
 	logger := utils.DefaultLogger
 
@@ -136,6 +140,7 @@ func main() {
 	//go udpReader(p, " Multicast ", " 224.42.42.1 ")
 
 	qconf.HandshakeTimeout = time.Second * 30
+
 	/*
 	   //version expiriment
 	   	var v []protocol.VersionNumber
@@ -201,26 +206,42 @@ func main() {
 	wg.Add(len(urls))
 	for _, addr := range urls {
 		logger.Infof("GET %s", addr)
-		go func(addr string) {
-			rsp, err := hclient.Get(addr)
-			if err != nil {
-				log.Fatal(err)
-			}
-			logger.Infof("Got response for %s: %#v", addr, rsp)
+		//go func(addr string) {
+		rsp, err := hclient.Get(addr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		logger.Infof("Got response for %s: %#v", addr, rsp)
 
-			body := &bytes.Buffer{}
-			_, err = io.Copy(body, rsp.Body)
-			if err != nil {
-				log.Fatal(err)
-			}
-			if *quiet {
-				logger.Infof("Request Body: %d bytes", body.Len())
-			} else {
-				logger.Infof("Request Body:")
-				logger.Infof("%s", body.Bytes())
-			}
-			wg.Done()
-		}(addr)
+		ss := strings.Split(addr, "/")
+		s := ss[len(ss)-1]
+
+		dir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+		if err != nil {
+			log.Fatal(err)
+		}
+		dir = "/home/jones/Documents/quic-go/example/client/video"
+		fmt.Println(dir)
+		// Create the file
+		out, err := os.Create(filepath.Join(dir, s))
+		if err != nil {
+			panic(err)
+		}
+		defer out.Close()
+
+		//body := &bytes.Buffer{}
+		_, err = io.Copy(out, rsp.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if *quiet {
+			logger.Infof("Request Body: %d bytes", out.Name)
+		} else {
+			logger.Infof("Request Body:")
+			logger.Infof("%s", out.Name)
+		}
+		wg.Done()
+		//}(addr)
 	}
 	wg.Wait()
 

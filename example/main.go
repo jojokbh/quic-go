@@ -228,7 +228,7 @@ func main() {
 	logger.SetLogTimeFormat("")
 
 	if len(bs) == 0 {
-		bs = binds{"192.168.1.204:8081"}
+		bs = binds{"localhost:8081"}
 	}
 
 	handler := setupHandler(*www, *trace)

@@ -39,12 +39,12 @@ func (h *sendQueue) Run() error {
 			// make sure that all queued packets are actually sent out
 			shouldClose = true
 		case p := <-h.queue:
-			if h.multi {
+
+			if p.Multi && h.multi {
 				if err := h.conn.WriteMulti(p.Data); err != nil {
 					return err
 				}
 			} else {
-
 				if err := h.conn.Write(p.Data); err != nil {
 					return err
 				}

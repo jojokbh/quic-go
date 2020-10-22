@@ -627,6 +627,121 @@ runLoop:
 	return closeErr.err
 }
 
+// run the session main loop
+func (s *session) runMulti() error {
+	defer s.ctxCancel()
+
+	s.timer = utils.NewTimer()
+
+	go s.cryptoStreamHandler.RunHandshake()
+	go func() {
+		if err := s.sendQueue.Run(); err != nil {
+			s.destroyImpl(err)
+		}
+	}()
+
+	if s.perspective == protocol.PerspectiveClient {
+		select {
+		case zeroRTTParams := <-s.clientHelloWritten:
+			s.scheduleSending()
+			if zeroRTTParams != nil {
+				s.restoreTransportParameters(zeroRTTParams)
+				close(s.earlySessionReadyChan)
+			}
+		case closeErr := <-s.closeChan:
+			// put the close error back into the channel, so that the run loop can receive it
+			s.closeChan <- closeErr
+		}
+	}
+
+	var closeErr closeError
+
+runLoop:
+	for {
+		// Close immediately if requested
+		select {
+		case closeErr = <-s.closeChan:
+			break runLoop
+		case <-s.handshakeCompleteChan:
+			s.handleHandshakeComplete()
+			println("handshake complete")
+		default:
+		}
+
+		s.maybeResetTimer()
+
+		select {
+		case closeErr = <-s.closeChan:
+			break runLoop
+		case <-s.timer.Chan():
+			s.timer.SetRead()
+			// We do all the interesting stuff after the switch statement, so
+			// nothing to see here.
+		case <-s.sendingScheduled:
+			// We do all the interesting stuff after the switch statement, so
+			// nothing to see here.
+		case p := <-s.receivedPackets:
+			// Only reset the timers if this packet was actually processed.
+			// This avoids modifying any state when handling undecryptable packets,
+			// which could be injected by an attacker.
+			println("Processing packet")
+			if wasProcessed := s.handlePacketMultiImpl(p); !wasProcessed {
+				continue
+			}
+			// Don't set timers and send packets if the packet made us close the session.
+			select {
+			case closeErr = <-s.closeChan:
+				break runLoop
+			default:
+			}
+		case <-s.handshakeCompleteChan:
+			s.handleHandshakeComplete()
+		}
+
+		now := time.Now()
+		if timeout := s.sentPacketHandler.GetLossDetectionTimeout(); !timeout.IsZero() && timeout.Before(now) {
+			// This could cause packets to be retransmitted.
+			// Check it before trying to send packets.
+			if err := s.sentPacketHandler.OnLossDetectionTimeout(); err != nil {
+				s.closeLocal(err)
+			}
+		}
+
+		if keepAliveTime := s.nextKeepAliveTime(); !keepAliveTime.IsZero() && !now.Before(keepAliveTime) {
+			// send a PING frame since there is no activity in the session
+			s.logger.Debugf("Sending a keep-alive PING to keep the connection alive.")
+			s.framer.QueueControlFrame(&wire.PingFrame{})
+			s.keepAlivePingSent = true
+		} else if !s.handshakeComplete && now.Sub(s.sessionCreationTime) >= s.config.HandshakeTimeout {
+			if s.tracer != nil {
+				s.tracer.ClosedConnection(logging.NewTimeoutCloseReason(logging.TimeoutReasonHandshake))
+			}
+			s.destroyImpl(qerr.NewTimeoutError("Handshake did not complete in time"))
+			continue
+		} else if s.handshakeComplete && now.Sub(s.idleTimeoutStartTime()) >= s.idleTimeout {
+			if s.tracer != nil {
+				s.tracer.ClosedConnection(logging.NewTimeoutCloseReason(logging.TimeoutReasonIdle))
+			}
+			s.destroyImpl(qerr.NewTimeoutError("No recent network activity"))
+			continue
+		}
+
+		if err := s.sendPackets(); err != nil {
+			s.closeLocal(err)
+		}
+	}
+
+	s.handleCloseError(closeErr)
+	if !errors.Is(closeErr.err, errCloseForRecreating{}) && s.tracer != nil {
+		s.tracer.Close()
+	}
+	s.logger.Infof("Connection %s closed.", s.logID)
+	s.cryptoStreamHandler.Close()
+	s.sendQueue.Close()
+	s.timer.Stop()
+	return closeErr.err
+}
+
 // blocks until the early session can be used
 func (s *session) earlySessionReady() <-chan struct{} {
 	return s.earlySessionReadyChan
@@ -774,7 +889,6 @@ func (s *session) handlePacketImpl(rp *receivedPacket) bool {
 		data = rest
 	}
 	println("handeled packet")
-	println(string(p.data))
 	p.buffer.MaybeRelease()
 	return processed
 }
@@ -1520,6 +1634,7 @@ func (s *session) sendPackets() error {
 			if sentPacket {
 				return nil
 			}
+
 			// We can at most send a single ACK only packet.
 			// There will only be a new ACK after receiving new packets.
 			// SendAck is only returned when we're congestion limited, so we don't need to set the pacingt timer.

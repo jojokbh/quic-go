@@ -206,7 +206,7 @@ func (p *packetPacker) PackConnectionClose(quicErr *qerr.QuicError) (*coalescedP
 		reason = quicErr.ErrorMessage
 	}
 
-	buffer := getPacketBuffer()
+	buffer := getPacketBuffer(false)
 	contents := make([]*packetContents, 0, 1)
 	for _, encLevel := range []protocol.EncryptionLevel{protocol.EncryptionInitial, protocol.EncryptionHandshake, protocol.Encryption0RTT, protocol.Encryption1RTT} {
 		if p.perspective == protocol.PerspectiveServer && encLevel == protocol.Encryption0RTT {
@@ -327,7 +327,8 @@ func (p *packetPacker) padPacket(buffer *packetBuffer) {
 // It packs an Initial / Handshake if there is data to send in these packet number spaces.
 // It should only be called before the handshake is confirmed.
 func (p *packetPacker) PackCoalescedPacket(maxPacketSize protocol.ByteCount) (*coalescedPacket, error) {
-	buffer := getPacketBuffer()
+	println("Packcoales")
+	buffer := getPacketBuffer(true)
 	packet, err := p.packCoalescedPacket(buffer, maxPacketSize)
 	if err != nil {
 		return nil, err
@@ -399,7 +400,7 @@ func (p *packetPacker) packCoalescedPacket(buffer *packetBuffer, maxPacketSize p
 // PackPacket packs a packet in the application data packet number space.
 // It should be called after the handshake is confirmed.
 func (p *packetPacker) PackPacket() (*packedPacket, error) {
-	buffer := getPacketBuffer()
+	buffer := getPacketBuffer(true)
 
 	contents, err := p.maybeAppendAppDataPacket(buffer, p.maxPacketSize)
 	if err != nil || contents == nil {
@@ -407,7 +408,6 @@ func (p *packetPacker) PackPacket() (*packedPacket, error) {
 		return nil, err
 	}
 	println("Packet pack ")
-	fmt.Println(string(buffer.Data))
 	return &packedPacket{
 		buffer:         buffer,
 		packetContents: contents,
@@ -527,7 +527,7 @@ func (p *packetPacker) maybeAppendAppDataPacket(buffer *packetBuffer, maxPacketS
 		p.numNonAckElicitingAcks = 0
 	}
 
-	println("Data packet")
+	println("Data packet ")
 	return p.appendPacket(buffer, header, payload, encLevel, sealer)
 }
 
@@ -577,13 +577,17 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, ackAll
 func (p *packetPacker) MaybePackProbePacket(encLevel protocol.EncryptionLevel) (*packedPacket, error) {
 	var contents *packetContents
 	var err error
-	buffer := getPacketBuffer()
+	println("Maybeprobe")
+	buffer := getPacketBuffer(false)
 	switch encLevel {
 	case protocol.EncryptionInitial:
+		println("init")
 		contents, err = p.maybeAppendCryptoPacket(buffer, p.maxPacketSize, protocol.EncryptionInitial)
 	case protocol.EncryptionHandshake:
+		println("hand")
 		contents, err = p.maybeAppendCryptoPacket(buffer, p.maxPacketSize, protocol.EncryptionHandshake)
 	case protocol.Encryption1RTT:
+		println("1rtt")
 		contents, err = p.maybeAppendAppDataPacket(buffer, p.maxPacketSize)
 	default:
 		panic("unknown encryption level")
@@ -680,7 +684,7 @@ func (p *packetPacker) writeSinglePacket(
 	encLevel protocol.EncryptionLevel,
 	sealer sealer,
 ) (*packedPacket, error) {
-	buffer := getPacketBuffer()
+	buffer := getPacketBuffer(false)
 	println("Single")
 	contents, err := p.appendPacket(buffer, header, payload, encLevel, sealer)
 	if err != nil {
@@ -738,14 +742,14 @@ func (p *packetPacker) appendPacket(
 
 	raw := buffer.Data
 	// encrypt the packet
-	println("Packet number")
-	fmt.Println(header.PacketNumber)
-	println("Packet type")
-	fmt.Println(header.PacketType())
+	//println("Packet number")
+	//fmt.Println(header.PacketNumber)
+	//println("Packet type")
+	//fmt.Println(header.PacketType())
 	raw = raw[:buf.Len()]
 
-	println("No encryption")
-	fmt.Println(string(raw))
+	//println("No encryption")
+	//fmt.Println(string(raw))
 
 	_ = sealer.Seal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
 	raw = raw[0 : buf.Len()+sealer.Overhead()]
@@ -754,8 +758,8 @@ func (p *packetPacker) appendPacket(
 	sealer.EncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
 	buffer.Data = raw
 
-	println("Encrypted")
-	fmt.Println(string(raw))
+	//println("Encrypted")
+	//fmt.Println(string(raw))
 
 	num := p.pnManager.PopPacketNumber(encLevel)
 	if num != header.PacketNumber {
