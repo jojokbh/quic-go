@@ -24,7 +24,17 @@ type longHeaderSealer struct {
 
 var _ LongHeaderSealer = &longHeaderSealer{}
 
+var multiSealer *longHeaderSealer
+
 func newLongHeaderSealer(aead cipher.AEAD, headerProtector headerProtector) LongHeaderSealer {
+	if multiSealer == nil {
+		println("Creating multiseal")
+		multiSealer = &longHeaderSealer{
+			aead:            aead,
+			headerProtector: headerProtector,
+			nonceBuf:        make([]byte, aead.NonceSize()),
+		}
+	}
 	return &longHeaderSealer{
 		aead:            aead,
 		headerProtector: headerProtector,
@@ -39,12 +49,27 @@ func (s *longHeaderSealer) Seal(dst, src []byte, pn protocol.PacketNumber, ad []
 	return s.aead.Seal(dst, s.nonceBuf, src, ad)
 }
 
+func (s *longHeaderSealer) MultiSeal(dst, src []byte, pn protocol.PacketNumber, ad []byte) []byte {
+	binary.BigEndian.PutUint64(multiSealer.nonceBuf[len(multiSealer.nonceBuf)-8:], uint64(pn))
+	// The AEAD we're using here will be the qtls.aeadAESGCM13.
+	// It uses the nonce provided here and XOR it with the IV.
+	return multiSealer.aead.Seal(dst, multiSealer.nonceBuf, src, ad)
+}
+
 func (s *longHeaderSealer) EncryptHeader(sample []byte, firstByte *byte, pnBytes []byte) {
 	s.headerProtector.EncryptHeader(sample, firstByte, pnBytes)
 }
 
+func (s *longHeaderSealer) MultiEncryptHeader(sample []byte, firstByte *byte, pnBytes []byte) {
+	multiSealer.headerProtector.EncryptHeader(sample, firstByte, pnBytes)
+}
+
 func (s *longHeaderSealer) Overhead() int {
 	return s.aead.Overhead()
+}
+
+func (s *longHeaderSealer) MutliOverhead() int {
+	return multiSealer.aead.Overhead()
 }
 
 type longHeaderOpener struct {

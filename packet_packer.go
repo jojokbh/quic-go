@@ -747,17 +747,32 @@ func (p *packetPacker) appendPacket(
 	//fmt.Println(header.PacketNumber)
 	//println("Packet type")
 	//fmt.Println(header.PacketType())
-	raw = raw[:buf.Len()]
+	if buffer.Multi {
+		print("Multi encryption")
+		raw = raw[:buf.Len()]
 
-	//println("No encryption")
-	//fmt.Println(string(raw))
+		//println("No encryption")
+		//fmt.Println(string(raw))
 
-	_ = sealer.Seal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
-	raw = raw[0 : buf.Len()+sealer.Overhead()]
-	// apply header protection
-	pnOffset := payloadOffset - int(header.PacketNumberLen)
-	sealer.EncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
-	buffer.Data = raw
+		_ = sealer.MultiSeal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
+		raw = raw[0 : buf.Len()+sealer.Overhead()]
+		// apply header protection
+		pnOffset := payloadOffset - int(header.PacketNumberLen)
+		sealer.MultiEncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
+		buffer.Data = raw
+	} else {
+		raw = raw[:buf.Len()]
+
+		//println("No encryption")
+		//fmt.Println(string(raw))
+
+		_ = sealer.Seal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
+		raw = raw[0 : buf.Len()+sealer.Overhead()]
+		// apply header protection
+		pnOffset := payloadOffset - int(header.PacketNumberLen)
+		sealer.EncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
+		buffer.Data = raw
+	}
 
 	//println("Encrypted")
 	//fmt.Println(string(raw))

@@ -265,7 +265,8 @@ func main() {
 					QuicConfig: quicConf,
 				}
 				println("ListenMulti")
-				err = server.ListenAndServeTLSMulti(getCert(), ifat)
+				//err = server.ListenAndServeTLSMulti(getCert(), ifat)
+				err = server.ListenAndServeTLS(getCert())
 			}
 			if err != nil {
 				fmt.Println(err)

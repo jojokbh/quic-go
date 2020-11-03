@@ -215,6 +215,20 @@ func (a *updatableAEAD) Seal(dst, src []byte, pn protocol.PacketNumber, ad []byt
 	return a.sendAEAD.Seal(dst, a.nonceBuf, src, ad)
 }
 
+func (a *updatableAEAD) MultiSeal(dst, src []byte, pn protocol.PacketNumber, ad []byte) []byte {
+	if a.firstSentWithCurrentKey == protocol.InvalidPacketNumber {
+		a.firstSentWithCurrentKey = pn
+	}
+	if a.firstPacketNumber == protocol.InvalidPacketNumber {
+		a.firstPacketNumber = pn
+	}
+	a.numSentWithCurrentKey++
+	binary.BigEndian.PutUint64(a.nonceBuf[len(a.nonceBuf)-8:], uint64(pn))
+	// The AEAD we're using here will be the qtls.aeadAESGCM13.
+	// It uses the nonce provided here and XOR it with the IV.
+	return a.sendAEAD.Seal(dst, a.nonceBuf, src, ad)
+}
+
 func (a *updatableAEAD) SetLargestAcked(pn protocol.PacketNumber) {
 	a.largestAcked = pn
 }
@@ -255,6 +269,10 @@ func (a *updatableAEAD) Overhead() int {
 }
 
 func (a *updatableAEAD) EncryptHeader(sample []byte, firstByte *byte, hdrBytes []byte) {
+	a.headerEncrypter.EncryptHeader(sample, firstByte, hdrBytes)
+}
+
+func (a *updatableAEAD) MultiEncryptHeader(sample []byte, firstByte *byte, hdrBytes []byte) {
 	a.headerEncrypter.EncryptHeader(sample, firstByte, hdrBytes)
 }
 

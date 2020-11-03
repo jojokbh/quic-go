@@ -44,6 +44,8 @@ type ShortHeaderOpener interface {
 // LongHeaderSealer seals a long header packet
 type LongHeaderSealer interface {
 	Seal(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) []byte
+	MultiSeal(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) []byte
+	MultiEncryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
 	EncryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
 	Overhead() int
 }
