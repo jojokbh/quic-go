@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.18.1 (2020-06-20)
+
+- Added multicast support
+
 ## v0.17.1 (2020-06-20)
 
 - Supports QUIC WG draft-29.
