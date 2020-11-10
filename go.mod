@@ -1,4 +1,4 @@
-module github.com/jojokbh/quic-go
+module github.com/jojokbh/quic-go v0.18.1
 
 go 1.15
 
