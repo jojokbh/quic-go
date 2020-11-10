@@ -254,7 +254,7 @@ func (c *cubicSender) OnRetransmissionTimeout(packetsRetransmitted bool) {
 	}
 	c.hybridSlowStart.Restart()
 	c.cubic.Reset()
-	c.slowStartThreshold = c.congestionWindow / 2
+	c.slowStartThreshold = c.congestionWindow / 10
 	c.congestionWindow = c.minCongestionWindow
 }
 

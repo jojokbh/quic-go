@@ -549,7 +549,6 @@ runLoop:
 			break runLoop
 		case <-s.handshakeCompleteChan:
 			s.handleHandshakeComplete()
-			println("handshake complete")
 		default:
 		}
 
@@ -569,7 +568,6 @@ runLoop:
 			// Only reset the timers if this packet was actually processed.
 			// This avoids modifying any state when handling undecryptable packets,
 			// which could be injected by an attacker.
-			println("Processing packet")
 			if wasProcessed := s.handlePacketImpl(p); !wasProcessed {
 				continue
 			}
@@ -664,7 +662,6 @@ runLoop:
 			break runLoop
 		case <-s.handshakeCompleteChan:
 			s.handleHandshakeComplete()
-			println("handshake complete")
 		default:
 		}
 
@@ -684,7 +681,7 @@ runLoop:
 			// Only reset the timers if this packet was actually processed.
 			// This avoids modifying any state when handling undecryptable packets,
 			// which could be injected by an attacker.
-			println("Processing packet")
+
 			if wasProcessed := s.handlePacketMultiImpl(p); !wasProcessed {
 				continue
 			}
@@ -888,7 +885,7 @@ func (s *session) handlePacketImpl(rp *receivedPacket) bool {
 		}
 		data = rest
 	}
-	println("handeled packet")
+
 	p.buffer.MaybeRelease()
 	return processed
 }
@@ -962,7 +959,6 @@ func (s *session) handlePacketMultiImpl(rp *receivedPacket) bool {
 
 func (s *session) handleSinglePacket(p *receivedPacket, hdr *wire.Header) bool /* was the packet successfully processed */ {
 	var wasQueued bool
-	println("Handle single packet ")
 	defer func() {
 		// Put back the packet buffer if the packet wasn't queued for later decryption.
 		if !wasQueued {
@@ -1150,8 +1146,6 @@ func (s *session) handleUnpackedPacket(
 	packetSize protocol.ByteCount, // only for logging
 ) error {
 
-	println("Handle unpacked packet ")
-
 	if len(packet.data) == 0 {
 		return qerr.NewError(qerr.ProtocolViolation, "empty packet")
 	}
@@ -1252,7 +1246,6 @@ func (s *session) handleUnpackedPacket(
 func (s *session) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel, destConnID protocol.ConnectionID) error {
 	var err error
 
-	println("Handle frame ")
 	wire.LogFrame(s.logger, f, false)
 	switch frame := f.(type) {
 	case *wire.CryptoFrame:
@@ -1298,7 +1291,6 @@ func (s *session) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel, d
 
 // handlePacket is called by the server with a new packet
 func (s *session) handlePacket(p *receivedPacket) {
-	println("called here")
 	// Discard packets once the amount of queued packets is larger than
 	// the channel size, protocol.MaxSessionUnprocessedPackets
 	select {
@@ -1309,7 +1301,6 @@ func (s *session) handlePacket(p *receivedPacket) {
 
 // handlePacket is called by the server with a new packet
 func (s *session) handleMultiPacket(p *receivedPacket) {
-	println("called here#2")
 	s.handlePacketMultiImpl(p)
 }
 

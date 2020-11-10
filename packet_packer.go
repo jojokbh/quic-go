@@ -263,7 +263,6 @@ func (p *packetPacker) PackConnectionClose(quicErr *qerr.QuicError) (*coalescedP
 			hdr = p.getLongHeader(encLevel)
 		}
 
-		println("close")
 		c, err := p.appendPacket(buffer, hdr, payload, encLevel, sealer)
 		if err != nil {
 			return nil, err
@@ -327,7 +326,7 @@ func (p *packetPacker) padPacket(buffer *packetBuffer) {
 // It packs an Initial / Handshake if there is data to send in these packet number spaces.
 // It should only be called before the handshake is confirmed.
 func (p *packetPacker) PackCoalescedPacket(maxPacketSize protocol.ByteCount) (*coalescedPacket, error) {
-	println("Packcoales")
+	
 	buffer := getPacketBuffer(false)
 	packet, err := p.packCoalescedPacket(buffer, maxPacketSize)
 	if err != nil {
@@ -408,7 +407,7 @@ func (p *packetPacker) PackPacket() (*packedPacket, error) {
 		buffer.Release()
 		return nil, err
 	}
-	println("Packet pack ")
+	
 	return &packedPacket{
 		buffer:         buffer,
 		packetContents: contents,
@@ -481,7 +480,7 @@ func (p *packetPacker) maybeAppendCryptoPacket(buffer *packetBuffer, maxPacketSi
 		payload.length += cf.Length(p.version)
 	}
 
-	println("Crypto")
+	
 	return p.appendPacket(buffer, hdr, payload, encLevel, sealer)
 }
 
@@ -528,7 +527,6 @@ func (p *packetPacker) maybeAppendAppDataPacket(buffer *packetBuffer, maxPacketS
 		p.numNonAckElicitingAcks = 0
 	}
 
-	println("Data packet ")
 	return p.appendPacket(buffer, header, payload, encLevel, sealer)
 }
 
@@ -578,7 +576,7 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, ackAll
 func (p *packetPacker) MaybePackProbePacket(encLevel protocol.EncryptionLevel) (*packedPacket, error) {
 	var contents *packetContents
 	var err error
-	println("Maybeprobe")
+	
 	buffer := getPacketBuffer(false)
 	switch encLevel {
 	case protocol.EncryptionInitial:
