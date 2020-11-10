@@ -334,7 +334,9 @@ func dialMultiContext(
 			log.Println(n, " mulicast read from ", src)
 			counter++
 
-			if counter%10 == 0 {
+			//False packet loss
+			if false {
+				//	if counter%10 == 0 {
 
 				lost++
 				print("lost packages: ")
