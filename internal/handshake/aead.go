@@ -3,6 +3,7 @@ package handshake
 import (
 	"crypto/cipher"
 	"encoding/binary"
+	"fmt"
 
 	"github.com/jojokbh/quic-go/internal/protocol"
 	"github.com/jojokbh/quic-go/internal/qtls"
@@ -96,6 +97,10 @@ func (o *longHeaderOpener) Open(dst, src []byte, pn protocol.PacketNumber, ad []
 	// It uses the nonce provided here and XOR it with the IV.
 	dec, err := o.aead.Open(dst, o.nonceBuf, src, ad)
 	if err != nil {
+		fmt.Println(dst)
+		fmt.Println(o.nonceBuf)
+		fmt.Println(src)
+		fmt.Println(ad)
 		err = ErrDecryptionFailed
 	}
 	return dec, err

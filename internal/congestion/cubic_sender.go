@@ -15,8 +15,8 @@ const (
 	maxBurstBytes           = 3 * maxDatagramSize
 	renoBeta                = 0.7 // Reno backoff factor.
 	maxCongestionWindow     = protocol.MaxCongestionWindowPackets * maxDatagramSize
-	minCongestionWindow     = 10000 * maxDatagramSize
-	initialCongestionWindow = 10000 * maxDatagramSize
+	minCongestionWindow     = 2 * maxDatagramSize
+	initialCongestionWindow = 32 * maxDatagramSize
 )
 
 type cubicSender struct {

@@ -40,6 +40,7 @@ type packetHandlerManager interface {
 	sessionRunner
 	SetServer(unknownPacketHandler)
 	CloseServer()
+	SetMultiStarted()
 }
 
 type quicSession interface {
@@ -568,7 +569,6 @@ func (s *baseServer) handlePacketImplMulti(p *receivedPacket) bool /* should the
 	s.logger.Debugf("<- Received Initial packet.")
 
 	if err := s.handleInitialImplMulti(p, hdr); err != nil {
-		println("HEREERERRE")
 		s.logger.Errorf("Error occurred handling initial packet: %s", err)
 	}
 	// Don't put the packet buffer back.

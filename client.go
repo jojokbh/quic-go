@@ -543,6 +543,7 @@ func (c *client) dial(ctx context.Context) error {
 		// ready to send 0-RTT data
 		return nil
 	case <-c.session.HandshakeComplete().Done():
+		c.packetHandlers.SetMultiStarted()
 		// handshake successfully completed
 		return nil
 	}

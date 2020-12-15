@@ -326,7 +326,7 @@ func (p *packetPacker) padPacket(buffer *packetBuffer) {
 // It packs an Initial / Handshake if there is data to send in these packet number spaces.
 // It should only be called before the handshake is confirmed.
 func (p *packetPacker) PackCoalescedPacket(maxPacketSize protocol.ByteCount) (*coalescedPacket, error) {
-	
+
 	buffer := getPacketBuffer(false)
 	packet, err := p.packCoalescedPacket(buffer, maxPacketSize)
 	if err != nil {
@@ -407,7 +407,7 @@ func (p *packetPacker) PackPacket() (*packedPacket, error) {
 		buffer.Release()
 		return nil, err
 	}
-	
+
 	return &packedPacket{
 		buffer:         buffer,
 		packetContents: contents,
@@ -480,7 +480,6 @@ func (p *packetPacker) maybeAppendCryptoPacket(buffer *packetBuffer, maxPacketSi
 		payload.length += cf.Length(p.version)
 	}
 
-	
 	return p.appendPacket(buffer, hdr, payload, encLevel, sealer)
 }
 
@@ -576,7 +575,7 @@ func (p *packetPacker) composeNextPacket(maxFrameSize protocol.ByteCount, ackAll
 func (p *packetPacker) MaybePackProbePacket(encLevel protocol.EncryptionLevel) (*packedPacket, error) {
 	var contents *packetContents
 	var err error
-	
+
 	buffer := getPacketBuffer(false)
 	switch encLevel {
 	case protocol.EncryptionInitial:
@@ -745,24 +744,23 @@ func (p *packetPacker) appendPacket(
 	//fmt.Println(header.PacketNumber)
 	//println("Packet type")
 	//fmt.Println(header.PacketType())
+
 	if buffer.Multi {
-		print("Multi encryption")
 		raw = raw[:buf.Len()]
+		println("No encryption")
 
-		//println("No encryption")
-		//fmt.Println(string(raw))
-
+		fmt.Println(raw)
 		_ = sealer.MultiSeal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
 		raw = raw[0 : buf.Len()+sealer.Overhead()]
 		// apply header protection
 		pnOffset := payloadOffset - int(header.PacketNumberLen)
 		sealer.MultiEncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
 		buffer.Data = raw
+		fmt.Println(raw)
 	} else {
 		raw = raw[:buf.Len()]
-
-		//println("No encryption")
-		//fmt.Println(string(raw))
+		println("No encryption uni")
+		fmt.Println(raw)
 
 		_ = sealer.Seal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
 		raw = raw[0 : buf.Len()+sealer.Overhead()]
@@ -770,6 +768,7 @@ func (p *packetPacker) appendPacket(
 		pnOffset := payloadOffset - int(header.PacketNumberLen)
 		sealer.EncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
 		buffer.Data = raw
+		fmt.Println(raw)
 	}
 
 	//println("Encrypted")

@@ -31,8 +31,11 @@ func (e statelessResetErr) Error() string {
 type packetHandlerMap struct {
 	mutex sync.RWMutex
 
-	conn      net.PacketConn
-	mconn     *net.UDPConn
+	conn  net.PacketConn
+	mconn *net.UDPConn
+
+	multiStarted bool
+
 	connIDLen int
 
 	handlers    map[string] /* string(ConnectionID)*/ packetHandler
@@ -57,6 +60,7 @@ var _ packetHandlerManager = &packetHandlerMap{}
 func newPacketHandlerMap(
 	conn net.PacketConn,
 	mconn *net.UDPConn,
+	multiStarted bool,
 	connIDLen int,
 	statelessResetKey []byte,
 	tracer logging.Tracer,
@@ -75,10 +79,15 @@ func newPacketHandlerMap(
 		tracer:                     tracer,
 		logger:                     logger,
 	}
-	go m.listen()
+
 	if mconn != nil {
 		println("LISTEN MULTI PACKET MAP ")
 		go m.listenMulti()
+
+		go m.listen()
+	} else {
+		println("LISTEN UNI PACKET MAP ")
+		go m.listen()
 	}
 
 	if logger.Debug() {
@@ -203,6 +212,9 @@ func (h *packetHandlerMap) SetServer(s unknownPacketHandler) {
 	h.server = s
 	h.mutex.Unlock()
 }
+func (h *packetHandlerMap) SetMultiStarted() {
+	h.multiStarted = true
+}
 
 func (h *packetHandlerMap) CloseServer() {
 	h.mutex.Lock()
@@ -278,16 +290,20 @@ func (h *packetHandlerMap) listenMulti() {
 	defer close(h.listening)
 
 	for {
-		buffer := getPacketBuffer(false)
+
+		buffer := getPacketBuffer(true)
 		data := buffer.Data[:protocol.MaxReceivePacketSize]
 		// The packet size should not exceed protocol.MaxReceivePacketSize bytes
 		// If it does, we only read a truncated packet, which will then end up undecryptable
-		_, _, err := h.mconn.ReadFrom(data)
+		n, addr, err := h.mconn.ReadFrom(data)
 		if err != nil {
 			h.close(err)
 			return
 		}
-		//h.handlePacket(addr, buffer, data[:n])
+		println("listen multi out")
+		println(n)
+		println(addr)
+		h.handlePacket(addr, buffer, data[:n])
 	}
 
 }
