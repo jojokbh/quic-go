@@ -747,9 +747,9 @@ func (p *packetPacker) appendPacket(
 
 	if buffer.Multi {
 		raw = raw[:buf.Len()]
-		println("No encryption")
+		//println("No encryption")
 
-		fmt.Println(raw)
+		//fmt.Println(raw)
 		_ = sealer.MultiSeal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
 		raw = raw[0 : buf.Len()+sealer.Overhead()]
 		// apply header protection
@@ -759,8 +759,8 @@ func (p *packetPacker) appendPacket(
 		fmt.Println(raw)
 	} else {
 		raw = raw[:buf.Len()]
-		println("No encryption uni")
-		fmt.Println(raw)
+		//println("No encryption uni")
+		//fmt.Println(raw)
 
 		_ = sealer.Seal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
 		raw = raw[0 : buf.Len()+sealer.Overhead()]

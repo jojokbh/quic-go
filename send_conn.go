@@ -2,7 +2,6 @@ package quic
 
 import (
 	"net"
-	"time"
 )
 
 // A sendConn allows sending using a simple Write() on a non-connected packet conn.
@@ -63,7 +62,7 @@ func (c *conn) WriteMulti(p []byte) error {
 }
 
 func (c *multiConn) Write(p []byte) error {
-	time.Sleep(time.Microsecond * 10)
+	//time.Sleep(time.Microsecond * 10)
 	_, err := c.conn.WriteTo(p, c.remoteAddr)
 	if err != nil {
 		return err
@@ -74,7 +73,7 @@ func (c *multiConn) Write(p []byte) error {
 
 func (c *multiConn) WriteMulti(p []byte) error {
 
-	time.Sleep(time.Microsecond * 10)
+	//time.Sleep(time.Microsecond * 10)
 	_, err := c.mConn.Write(p)
 	if err != nil {
 		println(" ERROR multi " + err.Error())

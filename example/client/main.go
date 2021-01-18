@@ -32,8 +32,8 @@ import (
 const (
 	srvAddr         = "224.42.42.1:1235"
 	maxDatagramSize = 8192
-	hostString      = "localhost"
-	//hostString = "ottb-ses.redirectme.net"
+	//hostString      = "localhost"
+	hostString = "ottb-ses.redirectme.net"
 )
 
 func main() {
