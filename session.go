@@ -828,6 +828,8 @@ func (s *session) handlePacketImpl(rp *receivedPacket) bool {
 		return false
 	}
 
+	println("Handle uni packet")
+
 	var counter uint8
 	var lastConnID protocol.ConnectionID
 	var processed bool
@@ -895,6 +897,8 @@ func (s *session) handlePacketMultiImpl(rp *receivedPacket) bool {
 		s.handleVersionNegotiationPacket(rp)
 		return false
 	}
+
+	println("process Multi Packet")
 
 	var counter uint8
 	var lastConnID protocol.ConnectionID

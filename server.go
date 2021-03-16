@@ -215,6 +215,7 @@ func listenMultiAddr(addr string, multiAddr string, tlsConf *tls.Config, config 
 		println("Error #6 " + err.Error())
 		return nil, err
 	}
+
 	serv.createdPacketConn = true
 	serv.createdPacketMultiConn = true
 	return serv, nil
@@ -235,6 +236,15 @@ func Listen(conn net.PacketConn, tlsConf *tls.Config, config *Config) (Listener,
 // ListenEarly works like Listen, but it returns sessions before the handshake completes.
 func ListenEarly(conn net.PacketConn, tlsConf *tls.Config, config *Config) (EarlyListener, error) {
 	s, err := listen(conn, tlsConf, config, true)
+	if err != nil {
+		return nil, err
+	}
+	return &earlyServer{s}, nil
+}
+
+// ListenMultiEarly works like Listen, but it returns sessions before the handshake completes.
+func ListenMultiEarly(conn net.PacketConn, multiConn *net.UDPConn, tlsConf *tls.Config, config *Config) (EarlyListener, error) {
+	s, err := ListenMulti(conn, multiConn, tlsConf, config, true)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +302,7 @@ func ListenMulti(conn net.PacketConn, multiConn *net.UDPConn, tlsConf *tls.Confi
 	if err := validateConfig(config); err != nil {
 		return nil, err
 	}
+
 	config = populateServerConfig(config)
 	for _, v := range config.Versions {
 		if !protocol.IsValidVersion(v) {

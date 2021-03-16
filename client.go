@@ -320,6 +320,7 @@ func dialMultiContext(
 	l.SetReadBuffer(protocol.MaxPacketSizeIPv4)
 
 	//Receive multicast data
+
 	counter := 0
 	lost := 0
 	go func() {
@@ -346,7 +347,7 @@ func dialMultiContext(
 				println("")
 			} else {
 				r := &receivedPacket{}
-				buf := getPacketBuffer(false)
+				buf := getPacketBuffer(true)
 				r.remoteAddr = remoteAddr
 				r.rcvTime = time.Now()
 				r.data = b[:n]

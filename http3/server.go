@@ -22,6 +22,7 @@ import (
 // allows mocking of quic.Listen and quic.ListenAddr
 var (
 	quicListen          = quic.ListenEarly
+	quicListenMulti     = quic.ListenMultiEarly
 	quicListenAddr      = quic.ListenAddrEarly
 	quicListenMultiAddr = quic.ListenMultiAddrEarly
 )
@@ -75,6 +76,7 @@ type Server struct {
 
 	loggerOnce sync.Once
 	logger     utils.Logger
+	ifat       *net.Interface
 }
 
 // ListenAndServe listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
@@ -118,7 +120,7 @@ func (s *Server) ListenAndServeTLSMulti(config *tls.Config, ifat *net.Interface)
 			Certificates: certs,
 		}
 	*/
-	return s.serveImplMulti(config, ifat, nil)
+	return s.serveImplMulti(config, ifat, nil, nil)
 }
 
 // Serve an existing UDP connection.
@@ -126,6 +128,13 @@ func (s *Server) ListenAndServeTLSMulti(config *tls.Config, ifat *net.Interface)
 // Closing the server does not close the packet conn.
 func (s *Server) Serve(conn net.PacketConn) error {
 	return s.serveImpl(s.UniCast.TLSConfig, conn)
+}
+
+// Serve an existing UDP connection.
+// It is possible to reuse the same connection for outgoing connections.
+// Closing the server does not close the packet conn.
+func (s *Server) ServeMulti(conn net.PacketConn, multiConn *net.UDPConn) error {
+	return s.serveImplMulti(s.MultiCast.TLSConfig, s.ifat, conn, multiConn)
 }
 
 func (s *Server) serveImpl(tlsConf *tls.Config, conn net.PacketConn) error {
@@ -181,7 +190,7 @@ func (s *Server) serveImpl(tlsConf *tls.Config, conn net.PacketConn) error {
 	}
 }
 
-func (s *Server) serveImplMulti(tlsConf *tls.Config, ifat *net.Interface, conn net.PacketConn) error {
+func (s *Server) serveImplMulti(tlsConf *tls.Config, ifat *net.Interface, conn net.PacketConn, multiConn *net.UDPConn) error {
 	if s.closed.Get() {
 		return http.ErrServerClosed
 	}
@@ -215,12 +224,12 @@ func (s *Server) serveImplMulti(tlsConf *tls.Config, ifat *net.Interface, conn n
 	var err error
 
 	var ln quic.EarlyListener
-	if conn == nil {
+	if conn == nil && multiConn == nil {
 		println("Listen multi " + s.MultiCast.Addr)
 		ln, err = quicListenMultiAddr(s.UniCast.Addr, s.MultiCast.Addr, tlsConf, ifat, s.QuicConfig)
 	} else {
-		println("Listen uni")
-		ln, err = quicListen(conn, tlsConf, s.QuicConfig)
+		println("Listen multi established")
+		ln, err = quicListenMulti(conn, multiConn, tlsConf, s.QuicConfig)
 	}
 	if err != nil {
 		return err
@@ -574,9 +583,16 @@ func ListenAndServeMulti(addr, multiAddr, certFile, keyFile string, handler http
 	tlsConn := tls.NewListener(tcpConn, config)
 	defer tlsConn.Close()
 
-	// Open the multicast connection
-	multiUdpConn, err := net.ListenPacket("udp4", "0.0.0.0:1024")
+	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
 	if err != nil {
+		println("Error #3 " + err.Error())
+		return err
+	}
+
+	// Open the multicast connection
+	multiUdpConn, err := net.DialUDP("udp", nil, multiUdpAddr)
+	if err != nil {
+		println("Error #4 " + err.Error())
 		return err
 	}
 	defer multiUdpConn.Close()
@@ -616,7 +632,8 @@ func ListenAndServeMulti(addr, multiAddr, certFile, keyFile string, handler http
 		hErr <- httpServer.Serve(tlsConn)
 	}()
 	go func() {
-		qErr <- quicServer.Serve(udpConn)
+		//qErr <- quicServer.Serve(udpConn)
+		qErr <- quicServer.ServeMulti(udpConn, multiUdpConn)
 	}()
 
 	select {

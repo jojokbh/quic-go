@@ -32,8 +32,9 @@ import (
 const (
 	srvAddr         = "224.42.42.1:1235"
 	maxDatagramSize = 8192
-	//hostString      = "localhost"
-	hostString = "ottb-ses.redirectme.net"
+	hostString      = "localhost"
+	//hostString = "192.168.42.42"
+	//hostString = "ottb-ses.redirectme.net"
 )
 
 func main() {
@@ -98,7 +99,7 @@ func main() {
 	}
 	fmt.Println(ifat)
 
-	c, err := net.ListenPacket("udp4", "224.42.42.1:1235")
+	c, err := net.ListenPacket("udp4", srvAddr)
 	if err != nil {
 		// error handling
 		println("Error listen unicast " + err.Error())
@@ -156,7 +157,7 @@ func main() {
 
 	roundTripper := &http3.RoundTripper{
 		Ifat:            ifat,
-		MultiAddr:       "224.42.42.1:1235",
+		MultiAddr:       srvAddr,
 		TLSClientConfig: tlsconf,
 		QuicConfig:      &qconf,
 	}

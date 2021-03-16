@@ -303,6 +303,7 @@ func (h *packetHandlerMap) listenMulti() {
 		println("listen multi out")
 		println(n)
 		println(addr)
+		buffer.Multi = true
 		h.handlePacket(addr, buffer, data[:n])
 	}
 
@@ -339,6 +340,52 @@ func (h *packetHandlerMap) handlePacket(
 		buffer:     buffer,
 		data:       data,
 	}
+	if handlerFound { // existing session
+		handler.handlePacket(p)
+		return
+	}
+	if data[0]&0x80 == 0 {
+		go h.maybeSendStatelessReset(p, connID)
+		return
+	}
+	if h.server == nil { // no server set
+		h.logger.Debugf("received a packet with an unexpected connection ID %s", connID)
+		return
+	}
+	h.server.handlePacket(p)
+}
+func (h *packetHandlerMap) handlePacketMulti(
+	addr net.Addr,
+	buffer *packetBuffer,
+	data []byte,
+) {
+	connID, err := wire.ParseConnectionID(data, h.connIDLen)
+	if err != nil {
+		buffer.MaybeRelease()
+		h.logger.Debugf("error parsing connection ID on packet from %s: %s", addr, err)
+		if h.tracer != nil {
+			h.tracer.DroppedPacket(addr, logging.PacketTypeNotDetermined, protocol.ByteCount(len(data)), logging.PacketDropHeaderParseError)
+		}
+		return
+	}
+	rcvTime := time.Now()
+
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+
+	if isStatelessReset := h.maybeHandleStatelessReset(data); isStatelessReset {
+		return
+	}
+
+	handler, handlerFound := h.handlers[string(connID)]
+
+	p := &receivedPacket{
+		remoteAddr: addr,
+		rcvTime:    rcvTime,
+		buffer:     buffer,
+		data:       data,
+	}
+	p.buffer.Multi = true
 	if handlerFound { // existing session
 		handler.handlePacket(p)
 		return

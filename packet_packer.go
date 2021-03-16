@@ -756,7 +756,7 @@ func (p *packetPacker) appendPacket(
 		pnOffset := payloadOffset - int(header.PacketNumberLen)
 		sealer.MultiEncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
 		buffer.Data = raw
-		fmt.Println(raw)
+		//fmt.Println(raw)
 	} else {
 		raw = raw[:buf.Len()]
 		//println("No encryption uni")
@@ -768,7 +768,7 @@ func (p *packetPacker) appendPacket(
 		pnOffset := payloadOffset - int(header.PacketNumberLen)
 		sealer.EncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
 		buffer.Data = raw
-		fmt.Println(raw)
+		//fmt.Println(raw)
 	}
 
 	//println("Encrypted")
