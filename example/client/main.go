@@ -32,8 +32,8 @@ import (
 const (
 	srvAddr         = "224.42.42.1:1235"
 	maxDatagramSize = 8192
-	hostString      = "localhost"
-	//hostString = "192.168.42.42"
+	//hostString      = "localhost"
+	hostString = "192.168.42.42"
 	//hostString = "ottb-ses.redirectme.net"
 )
 
@@ -221,7 +221,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		dir = "/home/jones/Documents/quic-go/example/client/video"
+		dir = "video"
 		fmt.Println(dir)
 		// Create the file
 		out, err := os.Create(filepath.Join(dir, s))

@@ -20,8 +20,8 @@ const (
 	timeThreshold = 9.0 / 8
 	// Maximum reordering in packets before packet threshold loss detection considers a packet lost.
 	packetThreshold = 3
-	// Before validating the client's address, the server won't send more than 3x bytes than it received.
-	amplificationFactor = 3
+	// Before validating the client's address, the server won't send more than 10x bytes than it received.
+	amplificationFactor = 10
 )
 
 type packetNumberSpace struct {
@@ -707,12 +707,16 @@ func (h *sentPacketHandler) SendMode() SendMode {
 		return h.ptoMode
 	}
 	// Only send ACKs if we're congestion limited.
-	if !h.congestion.CanSend(h.bytesInFlight) {
-		if h.logger.Debug() {
-			h.logger.Debugf("Congestion limited: bytes in flight %d, window %d", h.bytesInFlight, h.congestion.GetCongestionWindow())
+	// TEMPOARY DISABLED
+	/*
+		if !h.congestion.CanSend(h.bytesInFlight) {
+			if h.logger.Debug() {
+				h.logger.Debugf("Congestion limited: bytes in flight %d, window %d", h.bytesInFlight, h.congestion.GetCongestionWindow())
+			}
+			return SendAck
 		}
-		return SendAck
-	}
+	*/
+
 	if numTrackedPackets >= protocol.MaxOutstandingSentPackets {
 		if h.logger.Debug() {
 			h.logger.Debugf("Max outstanding limited: tracking %d packets, maximum: %d", numTrackedPackets, protocol.MaxOutstandingSentPackets)

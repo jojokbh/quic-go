@@ -64,7 +64,7 @@ const RetryTokenValidity = 10 * time.Second
 // MaxOutstandingSentPackets is maximum number of packets saved for retransmission.
 // When reached, it imposes a soft limit on sending new packets:
 // Sending ACKs and retransmission is still allowed, but now new regular packets can be sent.
-const MaxOutstandingSentPackets = 2 * MaxCongestionWindowPackets
+const MaxOutstandingSentPackets = 20 * MaxCongestionWindowPackets
 
 // MaxTrackedSentPackets is maximum number of sent packets saved for retransmission.
 // When reached, no more packets will be sent.

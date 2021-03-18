@@ -1643,10 +1643,12 @@ func (s *session) sendPackets() error {
 				return err
 			}
 		case ackhandler.SendPTOAppData:
+			println("ACK send PT0AppData")
 			if err := s.sendProbePacket(protocol.Encryption1RTT); err != nil {
 				return err
 			}
 		case ackhandler.SendAny:
+			println("ACK send Any")
 			if s.handshakeComplete && !s.sentPacketHandler.HasPacingBudget() {
 				s.pacingDeadline = s.sentPacketHandler.TimeUntilSend()
 				return nil
