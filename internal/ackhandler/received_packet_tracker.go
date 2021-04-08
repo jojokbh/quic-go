@@ -9,7 +9,7 @@ import (
 )
 
 // number of ack-eliciting packets received before sending an ack.
-const packetsBeforeAck = 2
+const packetsBeforeAck = 10
 
 type receivedPacketTracker struct {
 	largestObserved             protocol.PacketNumber
@@ -49,6 +49,9 @@ func newReceivedPacketTracker(
 
 func (h *receivedPacketTracker) ReceivedPacket(packetNumber protocol.PacketNumber, rcvTime time.Time, shouldInstigateAck bool) {
 	if packetNumber < h.ignoreBelow {
+		println("Ignore packet ")
+		print(packetNumber)
+		println()
 		return
 	}
 
@@ -62,6 +65,9 @@ func (h *receivedPacketTracker) ReceivedPacket(packetNumber protocol.PacketNumbe
 		h.hasNewAck = true
 	}
 	if shouldInstigateAck {
+		println("Maybe que ack ")
+		print(packetNumber)
+		println()
 		h.maybeQueueAck(packetNumber, rcvTime, isMissing)
 	}
 }

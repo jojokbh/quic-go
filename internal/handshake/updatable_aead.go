@@ -223,7 +223,10 @@ func (a *updatableAEAD) MultiSeal(dst, src []byte, pn protocol.PacketNumber, ad 
 		a.firstPacketNumber = pn
 	}
 	a.numSentWithCurrentKey++
-	binary.BigEndian.PutUint64(a.nonceBuf[len(a.nonceBuf)-8:], uint64(pn))
+	mNonce := a.nonceBuf[len(a.nonceBuf)-8:]
+	println("Nonce ")
+	fmt.Printf("%x\n", mNonce)
+	binary.BigEndian.PutUint64(mNonce, uint64(pn))
 	// The AEAD we're using here will be the qtls.aeadAESGCM13.
 	// It uses the nonce provided here and XOR it with the IV.
 	return a.sendAEAD.Seal(dst, a.nonceBuf, src, ad)

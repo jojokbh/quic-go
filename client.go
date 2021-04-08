@@ -168,6 +168,8 @@ func dialMultiAddrContext(
 	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
 		// error handling
 		println("Error #2 " + err.Error())
+	} else {
+		println("Joined IGMP")
 	}
 
 	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
@@ -323,6 +325,7 @@ func dialMultiContext(
 
 	counter := 0
 	lost := 0
+
 	go func() {
 		for {
 			b := make([]byte, protocol.MaxPacketSizeIPv4)
@@ -332,7 +335,7 @@ func dialMultiContext(
 			}
 
 			//print received data
-			log.Println(n, " mulicast read from ", src)
+			log.Println(n, " mulicast read from ", src, " on ")
 			counter++
 
 			//False packet loss

@@ -29,7 +29,6 @@ var multiSealer *longHeaderSealer
 
 func newLongHeaderSealer(aead cipher.AEAD, headerProtector headerProtector) LongHeaderSealer {
 	if multiSealer == nil {
-		println("Creating multiseal")
 		multiSealer = &longHeaderSealer{
 			aead:            aead,
 			headerProtector: headerProtector,
@@ -51,7 +50,10 @@ func (s *longHeaderSealer) Seal(dst, src []byte, pn protocol.PacketNumber, ad []
 }
 
 func (s *longHeaderSealer) MultiSeal(dst, src []byte, pn protocol.PacketNumber, ad []byte) []byte {
-	binary.BigEndian.PutUint64(multiSealer.nonceBuf[len(multiSealer.nonceBuf)-8:], uint64(pn))
+	mNonce := s.nonceBuf[len(s.nonceBuf)-8:]
+	println("Nonce ")
+	fmt.Printf("%x\n", mNonce)
+	binary.BigEndian.PutUint64(mNonce, uint64(pn))
 	// The AEAD we're using here will be the qtls.aeadAESGCM13.
 	// It uses the nonce provided here and XOR it with the IV.
 	return multiSealer.aead.Seal(dst, multiSealer.nonceBuf, src, ad)

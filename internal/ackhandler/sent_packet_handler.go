@@ -716,7 +716,6 @@ func (h *sentPacketHandler) SendMode() SendMode {
 			return SendAck
 		}
 	*/
-
 	if numTrackedPackets >= protocol.MaxOutstandingSentPackets {
 		if h.logger.Debug() {
 			h.logger.Debugf("Max outstanding limited: tracking %d packets, maximum: %d", numTrackedPackets, protocol.MaxOutstandingSentPackets)

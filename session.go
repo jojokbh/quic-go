@@ -1623,6 +1623,7 @@ func (s *session) sendPackets() error {
 		case ackhandler.SendNone:
 			return nil
 		case ackhandler.SendAck:
+			println("ACK send ack")
 			// If we already sent packets, and the send mode switches to SendAck,
 			// as we've just become congestion limited.
 			// There's no need to try to send an ACK at this moment.
@@ -1635,10 +1636,12 @@ func (s *session) sendPackets() error {
 			// SendAck is only returned when we're congestion limited, so we don't need to set the pacingt timer.
 			return s.maybeSendAckOnlyPacket()
 		case ackhandler.SendPTOInitial:
+			println("ACK send PTOinitial")
 			if err := s.sendProbePacket(protocol.EncryptionInitial); err != nil {
 				return err
 			}
 		case ackhandler.SendPTOHandshake:
+			println("ACK send PTOhandshake")
 			if err := s.sendProbePacket(protocol.EncryptionHandshake); err != nil {
 				return err
 			}

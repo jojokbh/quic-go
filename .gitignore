@@ -4,6 +4,7 @@ main
 mockgen_tmp.go
 *.qtr
 *.qlog
+ *.ts
 
 fuzzing/*/*.zip
 fuzzing/*/coverprofile

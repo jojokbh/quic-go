@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"time"
 
@@ -750,12 +751,15 @@ func (p *packetPacker) appendPacket(
 		//println("No encryption")
 
 		//fmt.Println(raw)
+		log.Println("dst ", raw[payloadOffset:payloadOffset], " src ", raw[payloadOffset:], " packet number ", header.PacketNumber, " raw ", raw[hdrOffset:payloadOffset])
 		_ = sealer.MultiSeal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
 		raw = raw[0 : buf.Len()+sealer.Overhead()]
 		// apply header protection
 		pnOffset := payloadOffset - int(header.PacketNumberLen)
 		sealer.MultiEncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
 		buffer.Data = raw
+
+		log.Println("after encryption dst ", raw[payloadOffset:payloadOffset], " src ", raw[payloadOffset:], " packet number ", header.PacketNumber, " raw ", raw[hdrOffset:payloadOffset])
 		//fmt.Println(raw)
 	} else {
 		raw = raw[:buf.Len()]
