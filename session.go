@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"reflect"
 	"sync"
@@ -1295,6 +1296,7 @@ func (s *session) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel, d
 
 // handlePacket is called by the server with a new packet
 func (s *session) handlePacket(p *receivedPacket) {
+	log.Println("Handle here")
 	// Discard packets once the amount of queued packets is larger than
 	// the channel size, protocol.MaxSessionUnprocessedPackets
 	select {
@@ -1305,8 +1307,21 @@ func (s *session) handlePacket(p *receivedPacket) {
 
 // handlePacket is called by the server with a new packet
 func (s *session) handleMultiPacket(p *receivedPacket) {
+	log.Println("Handle multi here")
+	// Discard packets once the amount of queued packets is larger than
+	// the channel size, protocol.MaxSessionUnprocessedPackets
+	select {
+	case s.receivedPackets <- p:
+	default:
+	}
+}
+
+/*
+// handlePacket is called by the server with a new packet
+func (s *session) handleMultiPacket(p *receivedPacket) {
 	s.handlePacketMultiImpl(p)
 }
+*/
 
 func (s *session) handleConnectionCloseFrame(frame *wire.ConnectionCloseFrame) {
 	var e error
