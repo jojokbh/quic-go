@@ -51,8 +51,7 @@ func (s *longHeaderSealer) Seal(dst, src []byte, pn protocol.PacketNumber, ad []
 
 func (s *longHeaderSealer) MultiSeal(dst, src []byte, pn protocol.PacketNumber, ad []byte) []byte {
 	mNonce := s.nonceBuf[len(s.nonceBuf)-8:]
-	println("Nonce ")
-	fmt.Printf("%x\n", mNonce)
+
 	binary.BigEndian.PutUint64(mNonce, uint64(pn))
 	// The AEAD we're using here will be the qtls.aeadAESGCM13.
 	// It uses the nonce provided here and XOR it with the IV.

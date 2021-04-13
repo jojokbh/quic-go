@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"reflect"
 	"sync"
@@ -182,7 +181,7 @@ type session struct {
 	handshakeCompleteChan chan struct{} // is closed when the handshake completes
 	handshakeComplete     bool
 	handshakeConfirmed    bool
-	multi                 bool
+	multi                 *bool
 
 	receivedRetry       bool
 	versionNegotiated   bool
@@ -245,6 +244,7 @@ var newSession = func(
 		tracer:                tracer,
 		logger:                logger,
 		version:               v,
+		multi:                 newTrue(),
 	}
 	if origDestConnID != nil {
 		s.logID = origDestConnID.String()
@@ -312,7 +312,6 @@ var newSession = func(
 			onError:          s.closeLocal,
 			dropKeys:         s.dropEncryptionLevel,
 			onHandshakeComplete: func() {
-				s.sendQueue.multi = true
 				runner.Retire(clientDestConnID)
 				close(s.handshakeCompleteChan)
 			},
@@ -340,6 +339,7 @@ var newSession = func(
 	)
 	s.unpacker = newPacketUnpacker(cs, s.version)
 	s.cryptoStreamManager = newCryptoStreamManager(cs, initialStream, handshakeStream, s.oneRTTStream)
+
 	return s
 }
 
@@ -686,6 +686,7 @@ runLoop:
 			if wasProcessed := s.handlePacketMultiImpl(p); !wasProcessed {
 				continue
 			}
+
 			// Don't set timers and send packets if the packet made us close the session.
 			select {
 			case closeErr = <-s.closeChan:
@@ -755,6 +756,17 @@ func (s *session) Context() context.Context {
 
 func (s *session) ConnectionState() ConnectionState {
 	return s.cryptoStreamHandler.ConnectionState()
+}
+func (s *session) SetMulti(b bool) {
+	if b != *s.multi {
+		s.multi = &b
+		s.sendQueue.multi = b
+	}
+}
+
+func newTrue() *bool {
+	b := false
+	return &b
 }
 
 // Time when the next keep-alive packet should be sent.
@@ -829,8 +841,6 @@ func (s *session) handlePacketImpl(rp *receivedPacket) bool {
 		return false
 	}
 
-	println("Handle uni packet")
-
 	var counter uint8
 	var lastConnID protocol.ConnectionID
 	var processed bool
@@ -898,8 +908,6 @@ func (s *session) handlePacketMultiImpl(rp *receivedPacket) bool {
 		s.handleVersionNegotiationPacket(rp)
 		return false
 	}
-
-	println("process Multi Packet")
 
 	var counter uint8
 	var lastConnID protocol.ConnectionID
@@ -1296,7 +1304,6 @@ func (s *session) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel, d
 
 // handlePacket is called by the server with a new packet
 func (s *session) handlePacket(p *receivedPacket) {
-	log.Println("Handle here")
 	// Discard packets once the amount of queued packets is larger than
 	// the channel size, protocol.MaxSessionUnprocessedPackets
 	select {
@@ -1307,7 +1314,7 @@ func (s *session) handlePacket(p *receivedPacket) {
 
 // handlePacket is called by the server with a new packet
 func (s *session) handleMultiPacket(p *receivedPacket) {
-	log.Println("Handle multi here")
+
 	// Discard packets once the amount of queued packets is larger than
 	// the channel size, protocol.MaxSessionUnprocessedPackets
 	select {
@@ -1666,7 +1673,7 @@ func (s *session) sendPackets() error {
 				return err
 			}
 		case ackhandler.SendAny:
-			println("ACK send Any")
+
 			if s.handshakeComplete && !s.sentPacketHandler.HasPacingBudget() {
 				s.pacingDeadline = s.sentPacketHandler.TimeUntilSend()
 				return nil

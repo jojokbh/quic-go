@@ -184,9 +184,11 @@ type Session interface {
 	// It blocks until the handshake completes.
 	// Warning: This API should not be considered stable and might change soon.
 	ConnectionState() ConnectionState
+	//Set multicast connection
+	SetMulti(bool)
 }
 
-// An EarlySession is a session that is handshaking.
+// An EarlySession is a session that is handshaetking.
 // Data sent during the handshake is encrypted using the forward secure keys.
 // When using client certificates, the client's identity is only verified
 // after completion of the handshake.

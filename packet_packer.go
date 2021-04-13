@@ -701,6 +701,9 @@ func (p *packetPacker) appendPacket(
 	encLevel protocol.EncryptionLevel,
 	sealer sealer,
 ) (*packetContents, error) {
+	if buffer.Multi {
+		header.Type = protocol.PacketTypeMulti
+	}
 	var paddingLen protocol.ByteCount
 	pnLen := protocol.ByteCount(header.PacketNumberLen)
 	if payload.length < 4-pnLen {

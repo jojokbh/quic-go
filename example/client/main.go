@@ -18,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jojokbh/quic-go"
@@ -32,8 +31,8 @@ import (
 const (
 	srvAddr         = "224.42.42.1:1235"
 	maxDatagramSize = 8192
-	//hostString      = "localhost"
-	hostString = "192.168.42.42"
+	hostString      = "localhost"
+	//hostString = "192.168.42.42"
 	//hostString = "ottb-ses.redirectme.net"
 )
 
@@ -201,10 +200,10 @@ func main() {
 				time.Sleep(time.Second)
 			}
 		}()
-	*/
 
-	var wg sync.WaitGroup
-	wg.Add(len(urls))
+		var wg sync.WaitGroup
+		wg.Add(len(urls))
+	*/
 	for _, addr := range urls {
 		logger.Infof("GET %s", addr)
 
@@ -241,10 +240,11 @@ func main() {
 			logger.Infof("Request Body:")
 			logger.Infof("%s", out.Name)
 		}
-		wg.Done()
+		time.Sleep(time.Second * 1)
+		//	wg.Done()
 		//}(addr)
 	}
-	wg.Wait()
+	//wg.Wait()
 
 }
 

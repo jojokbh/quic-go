@@ -1,6 +1,7 @@
 package quic
 
 import (
+	"fmt"
 	"net"
 )
 
@@ -52,16 +53,19 @@ func newSendMultiConn(c net.PacketConn, mConn *net.UDPConn, remote net.Addr, mul
 }
 
 func (c *conn) Write(p []byte) error {
+	fmt.Println("Write Uni")
 	_, err := c.PacketConn.WriteTo(p, c.remoteAddr)
 	return err
 }
 
 func (c *conn) WriteMulti(p []byte) error {
+	fmt.Println("Write Multi")
 	_, err := c.PacketConn.WriteTo(p, c.remoteAddr)
 	return err
 }
 
 func (c *multiConn) Write(p []byte) error {
+	fmt.Println("Write Uni")
 	//time.Sleep(time.Microsecond * 10)
 	_, err := c.conn.WriteTo(p, c.remoteAddr)
 	if err != nil {
@@ -72,6 +76,7 @@ func (c *multiConn) Write(p []byte) error {
 }
 
 func (c *multiConn) WriteMulti(p []byte) error {
+	fmt.Println("Write Multi")
 
 	//time.Sleep(time.Microsecond * 10)
 	_, err := c.mConn.Write(p)

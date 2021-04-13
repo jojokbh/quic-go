@@ -140,6 +140,7 @@ type cryptoSetup struct {
 	handshakeSealer LongHeaderSealer
 
 	aead          *updatableAEAD
+	multiaead     *updatableAEAD
 	has1RTTSealer bool
 	has1RTTOpener bool
 }

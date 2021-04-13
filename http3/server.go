@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -120,6 +121,7 @@ func (s *Server) ListenAndServeTLSMulti(config *tls.Config, ifat *net.Interface)
 			Certificates: certs,
 		}
 	*/
+	multiRequest = map[string]bool{}
 	return s.serveImplMulti(config, ifat, nil, nil)
 }
 
@@ -316,6 +318,8 @@ func (s *Server) maxHeaderBytes() uint64 {
 	return uint64(s.UniCast.MaxHeaderBytes)
 }
 
+var multiRequest map[string]bool
+
 func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpack.Decoder, onFrameError func()) requestError {
 	frame, err := parseNextFrame(str)
 	if err != nil {
@@ -352,13 +356,26 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 		s.logger.Infof("%s %s%s", req.Method, req.Host, req.RequestURI)
 	}
 
+	fmt.Printf("%s %s%s, on stream %d from %s", req.Method, req.Host, req.RequestURI, str.StreamID(), req.RemoteAddr)
+
 	ctx := str.Context()
 	ctx = context.WithValue(ctx, ServerContextKey, s)
 	ctx = context.WithValue(ctx, http.LocalAddrContextKey, sess.LocalAddr())
 	req = req.WithContext(ctx)
 	responseWriter := newResponseWriter(str, s.logger)
 	defer responseWriter.Flush()
+
 	handler := s.UniCast.Handler
+
+	if !multiRequest[req.RequestURI] && (strings.Contains(req.RequestURI, ".ts") || strings.Contains(req.RequestURI, ".mp4")) {
+		multiRequest[req.RequestURI] = true
+		fmt.Println("Set multicast handler!!")
+		handler = s.MultiCast.Handler
+		sess.SetMulti(true)
+	} else {
+		sess.SetMulti(false)
+	}
+
 	if handler == nil {
 		handler = http.DefaultServeMux
 	}
@@ -630,6 +647,9 @@ func ListenAndServeMulti(addr, multiAddr, certFile, keyFile string, handler http
 	qErr := make(chan error)
 	go func() {
 		hErr <- httpServer.Serve(tlsConn)
+	}()
+	go func() {
+		qErr <- quicServer.Serve(udpConn)
 	}()
 	go func() {
 		//qErr <- quicServer.Serve(udpConn)

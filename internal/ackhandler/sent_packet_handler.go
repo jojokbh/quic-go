@@ -256,19 +256,19 @@ func (h *sentPacketHandler) sentPacketImpl(packet *Packet) bool /* is ack-elicit
 }
 
 func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.EncryptionLevel, rcvTime time.Time) error {
-	println("Received ack")
+
 	pnSpace := h.getPacketNumberSpace(encLevel)
 
 	largestAcked := ack.LargestAcked()
 	if largestAcked > pnSpace.largestSent {
-		println("debug1")
+
 		return qerr.NewError(qerr.ProtocolViolation, "Received ACK for an unsent packet")
 	}
 
 	pnSpace.largestAcked = utils.MaxPacketNumber(pnSpace.largestAcked, largestAcked)
 
 	if !pnSpace.pns.Validate(ack) {
-		println("debug2")
+
 		return qerr.NewError(qerr.ProtocolViolation, "Received an ACK for a skipped packet number")
 	}
 
@@ -276,7 +276,7 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 	if h.perspective == protocol.PerspectiveClient && !h.peerCompletedAddressValidation &&
 		(encLevel == protocol.EncryptionHandshake || encLevel == protocol.Encryption1RTT) {
 		h.peerCompletedAddressValidation = true
-		println("debug3")
+
 		h.logger.Debugf("Peer doesn't await address validation any longer.")
 		// Make sure that the timer is reset, even if this ACK doesn't acknowledge any (ack-eliciting) packets.
 		h.setLossDetectionTimer()
@@ -284,7 +284,7 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 
 	// maybe update the RTT
 	if p := pnSpace.history.GetPacket(ack.LargestAcked()); p != nil {
-		println("debug4")
+
 		// don't use the ack delay for Initial and Handshake packets
 		var ackDelay time.Duration
 		if encLevel == protocol.Encryption1RTT {
@@ -328,7 +328,6 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 	h.numProbesToSend = 0
 
 	h.setLossDetectionTimer()
-	println("null")
 	return nil
 }
 
