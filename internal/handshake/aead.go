@@ -63,6 +63,7 @@ func (s *longHeaderSealer) Seal(dst, src []byte, pn protocol.PacketNumber, ad []
 }
 
 func (s *longHeaderSealer) MultiSeal(dst, src []byte, pn protocol.PacketNumber, ad []byte) []byte {
+	println("Longhead multiseal")
 	mNonce := s.nonceBuf[len(s.nonceBuf)-8:]
 
 	binary.BigEndian.PutUint64(mNonce, uint64(pn))

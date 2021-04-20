@@ -247,6 +247,7 @@ func (a *updatableAEAD) Seal(dst, src []byte, pn protocol.PacketNumber, ad []byt
 }
 
 func (a *updatableAEAD) MultiSeal(dst, src []byte, pn protocol.PacketNumber, ad []byte) []byte {
+	println("shorthead multiseal")
 	if a.firstSentWithCurrentKey == protocol.InvalidPacketNumber {
 		a.firstSentWithCurrentKey = pn
 	}

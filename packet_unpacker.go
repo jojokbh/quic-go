@@ -80,29 +80,29 @@ func (u *packetUnpacker) Unpack(hdr *wire.Header, rcvTime time.Time, data []byte
 		if hdr.IsLongHeader {
 			return nil, fmt.Errorf("unknown packet type: %s", hdr.Type)
 		}
-		if hdr.Type == protocol.PacketTypeMulti {
-			//Old code
-			//extHdr, decrypted, _ = u.unpackMultiPacket(hdr, rcvTime, data)
-			encLevel = protocol.Encryption1RTT
-			opener, err := u.cs.GetMultiOpener()
-			if err != nil {
-				return nil, err
-			}
-			extHdr, decrypted, err = u.unpackShortHeaderPacket(opener, hdr, rcvTime, data)
-			if err != nil {
-				return nil, err
-			}
-		} else {
+		/*
+			if hdr.Type == protocol.PacketTypeMulti {
+				//Old code
+				//extHdr, decrypted, _ = u.unpackMultiPacket(hdr, rcvTime, data)
+				encLevel = protocol.Encryption1RTT
+				opener, err := u.cs.GetMultiOpener()
+				if err != nil {
+					return nil, err
+				}
+				extHdr, decrypted, err = u.unpackShortHeaderPacket(opener, hdr, rcvTime, data)
+				if err != nil {
+					return nil, err
+				}
+		*/
 
-			encLevel = protocol.Encryption1RTT
-			opener, err := u.cs.Get1RTTOpener()
-			if err != nil {
-				return nil, err
-			}
-			extHdr, decrypted, err = u.unpackShortHeaderPacket(opener, hdr, rcvTime, data)
-			if err != nil {
-				return nil, err
-			}
+		encLevel = protocol.Encryption1RTT
+		opener, err := u.cs.Get1RTTOpener()
+		if err != nil {
+			return nil, err
+		}
+		extHdr, decrypted, err = u.unpackShortHeaderPacket(opener, hdr, rcvTime, data)
+		if err != nil {
+			return nil, err
 		}
 	}
 

@@ -707,7 +707,7 @@ func (p *packetPacker) appendPacket(
 	sealer sealer,
 ) (*packetContents, error) {
 	if buffer.Multi {
-		header.Type = protocol.PacketTypeMulti
+		//header.Type = protocol.PacketTypeMulti
 	}
 	var paddingLen protocol.ByteCount
 	pnLen := protocol.ByteCount(header.PacketNumberLen)
@@ -751,9 +751,9 @@ func (p *packetPacker) appendPacket(
 	//println("Packet number")
 	//fmt.Println(header.PacketNumber)
 	println("Packet type")
-	fmt.Println(header.PacketType())
+	fmt.Println(header.Type)
 
-	if buffer.Multi && header.Type == protocol.PacketTypeMulti {
+	if buffer.Multi {
 
 		raw = raw[:buf.Len()]
 		//println("No encryption")
