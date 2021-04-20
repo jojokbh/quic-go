@@ -182,6 +182,7 @@ type session struct {
 	handshakeComplete     bool
 	handshakeConfirmed    bool
 	multi                 *bool
+	client                bool
 
 	receivedRetry       bool
 	versionNegotiated   bool
@@ -245,6 +246,7 @@ var newSession = func(
 		logger:                logger,
 		version:               v,
 		multi:                 newTrue(),
+		client:                false,
 	}
 	if origDestConnID != nil {
 		s.logID = origDestConnID.String()
@@ -374,6 +376,7 @@ var newClientSession = func(
 		initialVersion:        initialVersion,
 		versionNegotiated:     hasNegotiatedVersion,
 		version:               v,
+		client:                true,
 	}
 	s.connIDManager = newConnIDManager(
 		destConnID,
@@ -458,6 +461,7 @@ var newClientSession = func(
 		s.perspective,
 		s.version,
 	)
+	//s.sendQueue.multi = false
 	if len(tlsConf.ServerName) > 0 {
 		s.tokenStoreKey = tlsConf.ServerName
 	} else {
@@ -473,6 +477,7 @@ var newClientSession = func(
 
 func (s *session) preSetup() {
 	s.sendQueue = newSendQueue(s.conn)
+	s.sendQueue.client = s.client
 	s.retransmissionQueue = newRetransmissionQueue(s.version)
 	s.frameParser = wire.NewFrameParser(s.version)
 	s.rttStats = &utils.RTTStats{}

@@ -238,6 +238,7 @@ func newCryptoSetup(
 		initialOpener:          initialOpener,
 		handshakeStream:        handshakeStream,
 		aead:                   newUpdatableAEAD(rttStats, tracer, logger),
+		multiaead:              newUpdatableMultiAEAD(rttStats, tracer, logger),
 		readEncLevel:           protocol.EncryptionInitial,
 		writeEncLevel:          protocol.EncryptionInitial,
 		runner:                 runner,
@@ -855,6 +856,25 @@ func (h *cryptoSetup) Get1RTTOpener() (ShortHeaderOpener, error) {
 		return nil, ErrKeysNotYetAvailable
 	}
 	return h.aead, nil
+}
+
+func (h *cryptoSetup) GetMultiOpener() (ShortHeaderOpener, error) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	/*
+		//Maybe keep
+		if h.zeroRTTOpener != nil && time.Since(h.handshakeCompleteTime) > 3*h.rttStats.PTO(true) {
+			h.zeroRTTOpener = nil
+			h.logger.Debugf("Dropping 0-RTT keys.")
+		}
+
+	*/
+	//Need hasMultiOpener
+	if !h.has1RTTOpener {
+		return nil, ErrKeysNotYetAvailable
+	}
+	return h.multiaead, nil
 }
 
 func (h *cryptoSetup) ConnectionState() ConnectionState {

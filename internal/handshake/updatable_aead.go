@@ -59,6 +59,7 @@ type updatableAEAD struct {
 	numSentWithCurrentKey   uint64
 	rcvAEAD                 cipher.AEAD
 	sendAEAD                cipher.AEAD
+	multiAEAD               cipher.AEAD
 	// caches cipher.AEAD.Overhead(). This speeds up calls to Overhead().
 	aeadOverhead int
 
@@ -67,8 +68,10 @@ type updatableAEAD struct {
 	nextRcvTrafficSecret  []byte
 	nextSendTrafficSecret []byte
 
-	headerDecrypter headerProtector
-	headerEncrypter headerProtector
+	headerDecrypter      headerProtector
+	headerMultiDecrypter headerProtector
+	headerMultiEncrypter headerProtector
+	headerEncrypter      headerProtector
 
 	rttStats *utils.RTTStats
 
@@ -77,6 +80,7 @@ type updatableAEAD struct {
 
 	// use a single slice to avoid allocations
 	nonceBuf []byte
+	multi    bool
 }
 
 var _ ShortHeaderOpener = &updatableAEAD{}
@@ -92,10 +96,26 @@ func newUpdatableAEAD(rttStats *utils.RTTStats, tracer logging.ConnectionTracer,
 		rttStats:                rttStats,
 		tracer:                  tracer,
 		logger:                  logger,
+		multi:                   true,
+	}
+}
+
+func newUpdatableMultiAEAD(rttStats *utils.RTTStats, tracer logging.ConnectionTracer, logger utils.Logger) *updatableAEAD {
+	return &updatableAEAD{
+		firstPacketNumber:       protocol.InvalidPacketNumber,
+		largestAcked:            protocol.InvalidPacketNumber,
+		firstRcvdWithCurrentKey: protocol.InvalidPacketNumber,
+		firstSentWithCurrentKey: protocol.InvalidPacketNumber,
+		keyUpdateInterval:       0,
+		rttStats:                rttStats,
+		tracer:                  tracer,
+		logger:                  logger,
+		multi:                   true,
 	}
 }
 
 func (a *updatableAEAD) rollKeys(now time.Time) {
+
 	a.keyPhase++
 	a.firstRcvdWithCurrentKey = protocol.InvalidPacketNumber
 	a.firstSentWithCurrentKey = protocol.InvalidPacketNumber
@@ -119,6 +139,11 @@ func (a *updatableAEAD) getNextTrafficSecret(hash crypto.Hash, ts []byte) []byte
 // For the client, this function is called before SetWriteKey.
 // For the server, this function is called after SetWriteKey.
 func (a *updatableAEAD) SetReadKey(suite *qtls.CipherSuiteTLS13, trafficSecret []byte) {
+	if a.multi {
+		secret := []byte("AES256Key-32Characters1234567890")
+		a.multiAEAD = createAEAD(suite, secret)
+		a.headerMultiDecrypter = newHeaderProtector(suite, secret, false)
+	}
 	a.rcvAEAD = createAEAD(suite, trafficSecret)
 	a.headerDecrypter = newHeaderProtector(suite, trafficSecret, false)
 	if a.suite == nil {
@@ -134,6 +159,12 @@ func (a *updatableAEAD) SetReadKey(suite *qtls.CipherSuiteTLS13, trafficSecret [
 // For the client, this function is called after SetReadKey.
 // For the server, this function is called before SetWriteKey.
 func (a *updatableAEAD) SetWriteKey(suite *qtls.CipherSuiteTLS13, trafficSecret []byte) {
+	if a.multi {
+		secret := []byte("AES256Key-32Characters1234567890")
+		a.multiAEAD = createAEAD(suite, secret)
+		a.headerMultiEncrypter = newHeaderProtector(suite, secret, false)
+	}
+
 	a.sendAEAD = createAEAD(suite, trafficSecret)
 	a.headerEncrypter = newHeaderProtector(suite, trafficSecret, false)
 	if a.suite == nil {
@@ -226,9 +257,8 @@ func (a *updatableAEAD) MultiSeal(dst, src []byte, pn protocol.PacketNumber, ad 
 	mNonce := a.nonceBuf[len(a.nonceBuf)-8:]
 
 	binary.BigEndian.PutUint64(mNonce, uint64(pn))
-	// The AEAD we're using here will be the qtls.aeadAESGCM13.
-	// It uses the nonce provided here and XOR it with the IV.
-	return a.sendAEAD.Seal(dst, a.nonceBuf, src, ad)
+
+	return a.multiAEAD.Seal(dst, a.nonceBuf, src, ad)
 }
 
 func (a *updatableAEAD) SetLargestAcked(pn protocol.PacketNumber) {
@@ -275,7 +305,10 @@ func (a *updatableAEAD) EncryptHeader(sample []byte, firstByte *byte, hdrBytes [
 }
 
 func (a *updatableAEAD) MultiEncryptHeader(sample []byte, firstByte *byte, hdrBytes []byte) {
-	a.headerEncrypter.EncryptHeader(sample, firstByte, hdrBytes)
+	a.headerMultiEncrypter.EncryptHeader(sample, firstByte, hdrBytes)
+}
+func (a *updatableAEAD) MultiDecryptHeader(sample []byte, firstByte *byte, hdrBytes []byte) {
+	a.headerMultiDecrypter.DecryptHeader(sample, firstByte, hdrBytes)
 }
 
 func (a *updatableAEAD) DecryptHeader(sample []byte, firstByte *byte, hdrBytes []byte) {

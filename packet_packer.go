@@ -2,8 +2,13 @@ package quic
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -745,12 +750,14 @@ func (p *packetPacker) appendPacket(
 	// encrypt the packet
 	//println("Packet number")
 	//fmt.Println(header.PacketNumber)
-	//println("Packet type")
-	//fmt.Println(header.PacketType())
+	println("Packet type")
+	fmt.Println(header.PacketType())
 
-	if buffer.Multi {
+	if buffer.Multi && header.Type == protocol.PacketTypeMulti {
+
 		raw = raw[:buf.Len()]
 		//println("No encryption")
+		//buffer.Data = simpleEncrypt(raw)
 
 		//fmt.Println(raw)
 		//log.Println("dst ", raw[payloadOffset:payloadOffset], " src ", raw[payloadOffset:], " packet number ", header.PacketNumber, " raw ", raw[hdrOffset:payloadOffset])
@@ -790,6 +797,34 @@ func (p *packetPacker) appendPacket(
 		frames: payload.frames,
 		length: buffer.Len() - hdrOffset,
 	}, nil
+}
+
+func simpleEncrypt(raw []byte) []byte {
+	// package like bcrypt or scrypt.
+	key, _ := hex.DecodeString("6368616e676520746869732070617373")
+	plaintext := raw
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err)
+	}
+
+	// The IV needs to be unique, but not secure. Therefore it's common to
+	// include it at the beginning of the ciphertext.
+	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
+	iv := ciphertext[:aes.BlockSize]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		panic(err)
+	}
+
+	stream := cipher.NewCFBEncrypter(block, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
+
+	// It's important to remember that ciphertexts must be authenticated
+	// (i.e. by using crypto/hmac) as well as being encrypted in order to
+	// be secure.
+
+	return ciphertext
 }
 
 func (p *packetPacker) SetToken(token []byte) {

@@ -17,7 +17,7 @@ const (
 	PacketTypeHandshake
 	// PacketType0RTT is the packet type of a 0-RTT packet
 	PacketType0RTT
-	// PacketType0RTT is the packet type of a 0-RTT packet
+	// PacketTypeMulti is the packet type on multicast network
 	PacketTypeMulti
 )
 

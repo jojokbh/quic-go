@@ -2,7 +2,10 @@ package quic
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -353,6 +356,7 @@ func dialMultiContext(
 				buf := getPacketBuffer(true)
 				r.remoteAddr = remoteAddr
 				r.rcvTime = time.Now()
+				//r.data = simpleDecrypt(b[:n])
 				r.data = b[:n]
 				r.buffer = buf
 
@@ -368,6 +372,30 @@ func dialMultiContext(
 		return nil, err
 	}
 	return c.session, nil
+}
+
+func simpleDecrypt(raw []byte) []byte {
+	key, _ := hex.DecodeString("6368616e676520746869732070617373")
+	ciphertext := raw
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err)
+	}
+
+	// The IV needs to be unique, but not secure. Therefore it's common to
+	// include it at the beginning of the ciphertext.
+	if len(ciphertext) < aes.BlockSize {
+		panic("ciphertext too short")
+	}
+	iv := ciphertext[:aes.BlockSize]
+	ciphertext = ciphertext[aes.BlockSize:]
+
+	stream := cipher.NewCFBDecrypter(block, iv)
+
+	// XORKeyStream can work in-place if the two arguments are the same.
+	stream.XORKeyStream(ciphertext, ciphertext)
+	return ciphertext
 }
 
 func newClient(

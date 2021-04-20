@@ -44,7 +44,8 @@ func main() {
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
 	flag.Parse()
 	//urls := [1]string{"https://" + hostString + ":8081/demo/text"}
-	urls := [8]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts", "https://" + hostString + ":8081/index2.ts", "https://" + hostString + ":8081/index3.ts", "https://" + hostString + ":8081/index4.ts", "https://" + hostString + ":8081/index5.ts", "https://" + hostString + ":8081/index6.ts"}
+	urls := [2]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts"}
+	//urls := [8]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts", "https://" + hostString + ":8081/index2.ts", "https://" + hostString + ":8081/index3.ts", "https://" + hostString + ":8081/index4.ts", "https://" + hostString + ":8081/index5.ts", "https://" + hostString + ":8081/index6.ts"}
 	//urls := [2]string{"https://localhost:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 	//urls := [4]string{"https://"+hostString+":8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 
@@ -244,6 +245,9 @@ func main() {
 		//	wg.Done()
 		//}(addr)
 	}
+
+	select {}
+
 	//wg.Wait()
 
 }

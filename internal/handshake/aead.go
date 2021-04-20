@@ -1,6 +1,7 @@
 package handshake
 
 import (
+	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
 	"fmt"
@@ -29,8 +30,20 @@ var multiSealer *longHeaderSealer
 
 func newLongHeaderSealer(aead cipher.AEAD, headerProtector headerProtector) LongHeaderSealer {
 	if multiSealer == nil {
+		key := []byte("AES256Key-32Characters1234567890")
+
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			panic(err.Error())
+		}
+
+		aesgcm, err := cipher.NewGCM(block)
+		if err != nil {
+			panic(err.Error())
+		}
+
 		multiSealer = &longHeaderSealer{
-			aead:            aead,
+			aead:            aesgcm,
 			headerProtector: headerProtector,
 			nonceBuf:        make([]byte, aead.NonceSize()),
 		}
@@ -63,7 +76,11 @@ func (s *longHeaderSealer) EncryptHeader(sample []byte, firstByte *byte, pnBytes
 }
 
 func (s *longHeaderSealer) MultiEncryptHeader(sample []byte, firstByte *byte, pnBytes []byte) {
-	multiSealer.headerProtector.EncryptHeader(sample, firstByte, pnBytes)
+	s.headerProtector.EncryptHeader(sample, firstByte, pnBytes)
+}
+
+func (o *longHeaderOpener) MultiDecryptHeader(sample []byte, firstByte *byte, pnBytes []byte) {
+	o.headerProtector.DecryptHeader(sample, firstByte, pnBytes)
 }
 
 func (s *longHeaderSealer) Overhead() int {
@@ -84,7 +101,29 @@ type longHeaderOpener struct {
 
 var _ LongHeaderOpener = &longHeaderOpener{}
 
+var multiOpener *longHeaderOpener
+
 func newLongHeaderOpener(aead cipher.AEAD, headerProtector headerProtector) LongHeaderOpener {
+	if multiOpener == nil {
+		key := []byte("AES256Key-32Characters1234567890")
+
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			panic(err.Error())
+		}
+
+		aesgcm, err := cipher.NewGCM(block)
+		if err != nil {
+			panic(err.Error())
+		}
+
+		multiOpener = &longHeaderOpener{
+			aead:            aesgcm,
+			headerProtector: headerProtector,
+			nonceBuf:        make([]byte, aead.NonceSize()),
+		}
+
+	}
 	return &longHeaderOpener{
 		aead:            aead,
 		headerProtector: headerProtector,
@@ -98,11 +137,14 @@ func (o *longHeaderOpener) Open(dst, src []byte, pn protocol.PacketNumber, ad []
 	// It uses the nonce provided here and XOR it with the IV.
 	dec, err := o.aead.Open(dst, o.nonceBuf, src, ad)
 	if err != nil {
-		fmt.Println(dst)
-		fmt.Println(o.nonceBuf)
-		fmt.Println(src)
-		fmt.Println(ad)
-		err = ErrDecryptionFailed
+		dec, err = multiSealer.aead.Open(dst, o.nonceBuf, src, ad)
+		if err != nil {
+			fmt.Println(dst)
+			fmt.Println(o.nonceBuf)
+			fmt.Println(src)
+			fmt.Println(ad)
+			err = ErrDecryptionFailed
+		}
 	}
 	return dec, err
 }

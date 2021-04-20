@@ -27,6 +27,7 @@ type ConnectionState = qtls.ConnectionState
 
 type headerDecryptor interface {
 	DecryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
+	MultiDecryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
 }
 
 // LongHeaderOpener opens a long header packet
@@ -86,6 +87,7 @@ type CryptoSetup interface {
 	GetHandshakeOpener() (LongHeaderOpener, error)
 	Get0RTTOpener() (LongHeaderOpener, error)
 	Get1RTTOpener() (ShortHeaderOpener, error)
+	GetMultiOpener() (ShortHeaderOpener, error)
 
 	GetInitialSealer() (LongHeaderSealer, error)
 	GetHandshakeSealer() (LongHeaderSealer, error)

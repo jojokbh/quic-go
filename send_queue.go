@@ -6,6 +6,7 @@ type sendQueue struct {
 	runStopped  chan struct{} // runStopped when the run loop returns
 	conn        multiSendConn
 	multi       bool
+	client      bool
 }
 
 func newSendQueue(conn multiSendConn) *sendQueue {
@@ -15,6 +16,7 @@ func newSendQueue(conn multiSendConn) *sendQueue {
 		closeCalled: make(chan struct{}),
 		queue:       make(chan *packetBuffer, 1),
 		multi:       false,
+		client:      false,
 	}
 	return s
 }
@@ -40,7 +42,7 @@ func (h *sendQueue) Run() error {
 			shouldClose = true
 		case p := <-h.queue:
 
-			if p.Multi && h.multi {
+			if p.Multi && h.multi && !h.client {
 				if err := h.conn.WriteMulti(p.Data); err != nil {
 					return err
 				}
