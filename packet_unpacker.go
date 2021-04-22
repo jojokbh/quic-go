@@ -21,6 +21,7 @@ type unpackedPacket struct {
 	hdr             *wire.ExtendedHeader
 	encryptionLevel protocol.EncryptionLevel
 	data            []byte
+	multi           bool
 }
 
 // The packetUnpacker unpacks QUIC packets.
@@ -41,7 +42,7 @@ func newPacketUnpacker(cs handshake.CryptoSetup, version protocol.VersionNumber)
 	}
 }
 
-func (u *packetUnpacker) Unpack(hdr *wire.Header, rcvTime time.Time, data []byte) (*unpackedPacket, error) {
+func (u *packetUnpacker) Unpack(hdr *wire.Header, rcvTime time.Time, data []byte, multi bool) (*unpackedPacket, error) {
 	var encLevel protocol.EncryptionLevel
 	var extHdr *wire.ExtendedHeader
 	var decrypted []byte
@@ -80,33 +81,40 @@ func (u *packetUnpacker) Unpack(hdr *wire.Header, rcvTime time.Time, data []byte
 		if hdr.IsLongHeader {
 			return nil, fmt.Errorf("unknown packet type: %s", hdr.Type)
 		}
-		/*
-			if hdr.Type == protocol.PacketTypeMulti {
-				//Old code
-				//extHdr, decrypted, _ = u.unpackMultiPacket(hdr, rcvTime, data)
-				encLevel = protocol.Encryption1RTT
-				opener, err := u.cs.GetMultiOpener()
-				if err != nil {
-					return nil, err
-				}
-				extHdr, decrypted, err = u.unpackShortHeaderPacket(opener, hdr, rcvTime, data)
-				if err != nil {
-					return nil, err
-				}
-		*/
+		if multi {
+			encLevel = protocol.EncryptionMulti
+			opener, err := u.cs.Get1RTTOpener()
+			if err != nil {
+				return nil, err
+			}
+			extHdr, err = unpackMultiHeader(opener, hdr, data, u.version)
+			if err != nil {
+				fmt.Println("Header error ", err)
+				return nil, err
+			}
+			extHdr.PacketNumber = protocol.DecodePacketNumber(
+				extHdr.PacketNumberLen,
+				u.largestRcvdPacketNumber,
+				extHdr.PacketNumber,
+			)
+			extHdrLen := extHdr.ParsedLen()
+			decrypted = data[extHdrLen:]
 
-		encLevel = protocol.Encryption1RTT
-		opener, err := u.cs.Get1RTTOpener()
-		if err != nil {
-			return nil, err
-		}
-		extHdr, decrypted, err = u.unpackShortHeaderPacket(opener, hdr, rcvTime, data)
-		if err != nil {
-			return nil, err
+		} else {
+			encLevel = protocol.Encryption1RTT
+			opener, err := u.cs.Get1RTTOpener()
+			if err != nil {
+				return nil, err
+			}
+			extHdr, decrypted, err = u.unpackShortHeaderPacket(opener, hdr, rcvTime, data)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	// Only do this after decrypting, so we are sure the packet is not attacker-controlled
+
 	u.largestRcvdPacketNumber = utils.MaxPacketNumber(u.largestRcvdPacketNumber, extHdr.PacketNumber)
 
 	return &unpackedPacket{
@@ -114,6 +122,7 @@ func (u *packetUnpacker) Unpack(hdr *wire.Header, rcvTime time.Time, data []byte
 		packetNumber:    extHdr.PacketNumber,
 		encryptionLevel: encLevel,
 		data:            decrypted,
+		multi:           multi,
 	}, nil
 }
 
@@ -163,6 +172,9 @@ func (u *packetUnpacker) unpackShortHeaderPacket(
 	rcvTime time.Time,
 	data []byte,
 ) (*wire.ExtendedHeader, []byte, error) {
+	fmt.Println("Unpack")
+	//fmt.Println(data)
+	fmt.Println(hdr)
 	extHdr, parseErr := u.unpackHeader(opener, hdr, data)
 	// If the reserved bits are set incorrectly, we still need to continue unpacking.
 	// This avoids a timing side-channel, which otherwise might allow an attacker
@@ -174,13 +186,15 @@ func (u *packetUnpacker) unpackShortHeaderPacket(
 	decrypted, err := opener.Open(data[extHdrLen:extHdrLen], data[extHdrLen:], rcvTime, extHdr.PacketNumber, extHdr.KeyPhase, data[:extHdrLen])
 	if err != nil {
 		fmt.Println("ERROR 1rtt ")
-		fmt.Println(data)
-		fmt.Println(data[extHdrLen:extHdrLen])
-		fmt.Println(data[extHdrLen:])
-		fmt.Println(rcvTime)
-		fmt.Println(extHdr.PacketNumber)
-		fmt.Println(extHdr.KeyPhase)
-		fmt.Println(data[:extHdrLen])
+		/*
+			fmt.Println(data)
+			fmt.Println(data[extHdrLen:extHdrLen])
+			fmt.Println(data[extHdrLen:])
+			fmt.Println(rcvTime)
+			fmt.Println(extHdr.PacketNumber)
+			fmt.Println(extHdr.KeyPhase)
+			fmt.Println(data[:extHdrLen])
+		*/
 		return nil, nil, err
 	}
 	if parseErr != nil {
@@ -257,12 +271,7 @@ func unpackMultiHeader(hd headerDecryptor, hdr *wire.Header, data []byte, versio
 	// 1. save a copy of the 4 bytes
 	origPNBytes := make([]byte, 4)
 	copy(origPNBytes, data[hdrLen:hdrLen+4])
-	// 2. decrypt the header, assuming a 4 byte packet number
-	hd.MultiDecryptHeader(
-		data[hdrLen+4:hdrLen+4+16],
-		&data[0],
-		data[hdrLen:hdrLen+4],
-	)
+
 	// 3. parse the header (and learn the actual length of the packet number)
 	extHdr, parseErr := hdr.ParseExtended(r, version)
 	if parseErr != nil && parseErr != wire.ErrInvalidReservedBits {

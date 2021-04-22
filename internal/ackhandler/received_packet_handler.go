@@ -53,7 +53,7 @@ func (h *receivedPacketHandler) ReceivedPacket(
 			return fmt.Errorf("received packet number %d on a 0-RTT packet after receiving %d on a 1-RTT packet", pn, h.lowest1RTTPacket)
 		}
 		h.appDataPackets.ReceivedPacket(pn, rcvTime, shouldInstigateAck)
-	case protocol.Encryption1RTT:
+	case protocol.Encryption1RTT, protocol.EncryptionMulti:
 		if h.lowest1RTTPacket == protocol.InvalidPacketNumber || pn < h.lowest1RTTPacket {
 			h.lowest1RTTPacket = pn
 		}
@@ -127,6 +127,10 @@ func (h *receivedPacketHandler) IsPotentiallyDuplicate(pn protocol.PacketNumber,
 			return h.handshakePackets.IsPotentiallyDuplicate(pn)
 		}
 	case protocol.Encryption0RTT, protocol.Encryption1RTT:
+		if h.appDataPackets != nil {
+			return h.appDataPackets.IsPotentiallyDuplicate(pn)
+		}
+	case protocol.EncryptionMulti:
 		if h.appDataPackets != nil {
 			return h.appDataPackets.IsPotentiallyDuplicate(pn)
 		}

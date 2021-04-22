@@ -65,7 +65,7 @@ func (h *receivedPacketTracker) ReceivedPacket(packetNumber protocol.PacketNumbe
 		h.hasNewAck = true
 	}
 	if shouldInstigateAck {
-		println("Maybe que ack ")
+		print(" ")
 		print(packetNumber)
 		h.maybeQueueAck(packetNumber, rcvTime, isMissing)
 	}

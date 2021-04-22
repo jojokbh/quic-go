@@ -2,6 +2,7 @@ package handshake
 
 import (
 	"bytes"
+	"crypto/cipher"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -140,7 +141,7 @@ type cryptoSetup struct {
 	handshakeSealer LongHeaderSealer
 
 	aead          *updatableAEAD
-	multiaead     *updatableAEAD
+	multiaead     *cipher.AEAD
 	has1RTTSealer bool
 	has1RTTOpener bool
 }
@@ -232,13 +233,13 @@ func newCryptoSetup(
 	}
 	extHandler := newExtensionHandler(tp.Marshal(perspective), perspective)
 	cs := &cryptoSetup{
-		tlsConf:                tlsConf,
-		initialStream:          initialStream,
-		initialSealer:          initialSealer,
-		initialOpener:          initialOpener,
-		handshakeStream:        handshakeStream,
-		aead:                   newUpdatableAEAD(rttStats, tracer, logger),
-		multiaead:              newUpdatableMultiAEAD(rttStats, tracer, logger),
+		tlsConf:         tlsConf,
+		initialStream:   initialStream,
+		initialSealer:   initialSealer,
+		initialOpener:   initialOpener,
+		handshakeStream: handshakeStream,
+		aead:            newUpdatableAEAD(rttStats, tracer, logger),
+		//multiaead:              createAEAD(suite, []byte("")),
 		readEncLevel:           protocol.EncryptionInitial,
 		writeEncLevel:          protocol.EncryptionInitial,
 		runner:                 runner,
@@ -874,7 +875,7 @@ func (h *cryptoSetup) GetMultiOpener() (ShortHeaderOpener, error) {
 	if !h.has1RTTOpener {
 		return nil, ErrKeysNotYetAvailable
 	}
-	return h.multiaead, nil
+	return h.aead, nil
 }
 
 func (h *cryptoSetup) ConnectionState() ConnectionState {

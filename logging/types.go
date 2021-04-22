@@ -18,6 +18,8 @@ const (
 	PacketTypeVersionNegotiation
 	// PacketType1RTT is a 1-RTT packet
 	PacketType1RTT
+	// PacketType1RTT is a 1-RTT packet
+	PacketTypeMulti
 	// PacketTypeStatelessReset is a stateless reset
 	PacketTypeStatelessReset
 	// PacketTypeNotDetermined is the packet type when it could not be determined

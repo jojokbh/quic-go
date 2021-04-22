@@ -7,6 +7,9 @@ import (
 // PacketTypeFromHeader determines the packet type from a *wire.Header.
 func PacketTypeFromHeader(hdr *Header) PacketType {
 	if !hdr.IsLongHeader {
+		if hdr.PacketType() == "PacketTypeMulti" {
+			return PacketTypeMulti
+		}
 		return PacketType1RTT
 	}
 	if hdr.Version == 0 {

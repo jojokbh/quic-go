@@ -15,6 +15,8 @@ const (
 	Encryption0RTT
 	// Encryption1RTT is the 1-RTT encryption level
 	Encryption1RTT
+	// Encryption1RTT is the 1-RTT encryption level
+	EncryptionMulti
 )
 
 func (e EncryptionLevel) String() string {
@@ -27,6 +29,8 @@ func (e EncryptionLevel) String() string {
 		return "0-RTT"
 	case Encryption1RTT:
 		return "1-RTT"
+	case EncryptionMulti:
+		return "Multi encryption"
 	}
 	return "unknown"
 }

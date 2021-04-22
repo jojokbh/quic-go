@@ -96,7 +96,7 @@ func newUpdatableAEAD(rttStats *utils.RTTStats, tracer logging.ConnectionTracer,
 		rttStats:                rttStats,
 		tracer:                  tracer,
 		logger:                  logger,
-		multi:                   true,
+		multi:                   false,
 	}
 }
 

@@ -116,7 +116,7 @@ func (p *frameParser) isAllowedAtEncLevel(f Frame, encLevel protocol.EncryptionL
 		default:
 			return true
 		}
-	case protocol.Encryption1RTT:
+	case protocol.Encryption1RTT, protocol.EncryptionMulti:
 		return true
 	default:
 		panic("unknown encryption level")

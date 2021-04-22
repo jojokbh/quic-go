@@ -303,7 +303,6 @@ func (h *packetHandlerMap) listenMulti() {
 		println("listen multi out")
 		println(n)
 		println(addr)
-		buffer.Multi = true
 		h.handlePacket(addr, buffer, data[:n])
 	}
 

@@ -25,7 +25,7 @@ import (
 )
 
 type unpacker interface {
-	Unpack(hdr *wire.Header, rcvTime time.Time, data []byte) (*unpackedPacket, error)
+	Unpack(hdr *wire.Header, rcvTime time.Time, data []byte, multi bool) (*unpackedPacket, error)
 }
 
 type streamGetter interface {
@@ -377,6 +377,7 @@ var newClientSession = func(
 		versionNegotiated:     hasNegotiatedVersion,
 		version:               v,
 		client:                true,
+		multi:                 newTrue(),
 	}
 	s.connIDManager = newConnIDManager(
 		destConnID,
@@ -1003,7 +1004,7 @@ func (s *session) handleSinglePacket(p *receivedPacket, hdr *wire.Header) bool /
 		return false
 	}
 
-	packet, err := s.unpacker.Unpack(hdr, p.rcvTime, p.data)
+	packet, err := s.unpacker.Unpack(hdr, p.rcvTime, p.data, p.buffer.Multi)
 	if err != nil {
 		switch err {
 		case handshake.ErrKeysDropped:
@@ -1034,12 +1035,14 @@ func (s *session) handleSinglePacket(p *receivedPacket, hdr *wire.Header) bool /
 		packet.hdr.Log(s.logger)
 	}
 
-	if s.receivedPacketHandler.IsPotentiallyDuplicate(packet.packetNumber, packet.encryptionLevel) {
-		s.logger.Debugf("Dropping (potentially) duplicate packet.")
-		if s.tracer != nil {
-			s.tracer.DroppedPacket(logging.PacketTypeFromHeader(hdr), p.Size(), logging.PacketDropDuplicate)
+	if !p.buffer.Multi {
+		if s.receivedPacketHandler.IsPotentiallyDuplicate(packet.packetNumber, packet.encryptionLevel) {
+			s.logger.Debugf("Dropping (potentially) duplicate packet.")
+			if s.tracer != nil {
+				s.tracer.DroppedPacket(logging.PacketTypeFromHeader(hdr), p.Size(), logging.PacketDropDuplicate)
+			}
+			return false
 		}
-		return false
 	}
 
 	if err := s.handleUnpackedPacket(packet, p.rcvTime, p.Size()); err != nil {
@@ -1226,7 +1229,7 @@ func (s *session) handleUnpackedPacket(
 		}
 		// Only process frames now if we're not logging.
 		// If we're logging, we need to make sure that the packet_received event is logged first.
-		if s.tracer == nil {
+		if s.tracer == nil && !packet.multi {
 			if err := s.handleFrame(frame, packet.encryptionLevel, packet.hdr.DestConnectionID); err != nil {
 				return err
 			}
@@ -1257,6 +1260,8 @@ func (s *session) handleUnpackedPacket(
 			}
 		}
 	}
+
+	println("So far so good")
 
 	return s.receivedPacketHandler.ReceivedPacket(packet.packetNumber, packet.encryptionLevel, rcvTime, isAckEliciting)
 }
@@ -1317,6 +1322,7 @@ func (s *session) handlePacket(p *receivedPacket) {
 	}
 }
 
+/*
 // handlePacket is called by the server with a new packet
 func (s *session) handleMultiPacket(p *receivedPacket) {
 
@@ -1327,13 +1333,12 @@ func (s *session) handleMultiPacket(p *receivedPacket) {
 	default:
 	}
 }
+*/
 
-/*
 // handlePacket is called by the server with a new packet
 func (s *session) handleMultiPacket(p *receivedPacket) {
 	s.handlePacketMultiImpl(p)
 }
-*/
 
 func (s *session) handleConnectionCloseFrame(frame *wire.ConnectionCloseFrame) {
 	var e error
@@ -1771,7 +1776,7 @@ func (s *session) sendPacket() (bool, error) {
 		return true, nil
 	}
 
-	packet, err := s.packer.PackPacket()
+	packet, err := s.packer.PackPacket(s.multi)
 	if err != nil || packet == nil {
 		return false, err
 	}

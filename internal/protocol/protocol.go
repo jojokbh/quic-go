@@ -17,6 +17,8 @@ const (
 	PacketTypeHandshake
 	// PacketType0RTT is the packet type of a 0-RTT packet
 	PacketType0RTT
+	// PacketType0RTT is the packet type of a 0-RTT packet
+	PacketTypeMulti
 )
 
 func (t PacketType) String() string {
@@ -28,6 +30,8 @@ func (t PacketType) String() string {
 	case PacketTypeHandshake:
 		return "Handshake"
 	case PacketType0RTT:
+		return "0-RTT Protected"
+	case PacketTypeMulti:
 		return "0-RTT Protected"
 	default:
 		return fmt.Sprintf("unknown packet type: %d", t)

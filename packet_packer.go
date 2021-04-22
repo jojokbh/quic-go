@@ -23,7 +23,7 @@ import (
 
 type packer interface {
 	PackCoalescedPacket(protocol.ByteCount) (*coalescedPacket, error)
-	PackPacket() (*packedPacket, error)
+	PackPacket(*bool) (*packedPacket, error)
 	MaybePackProbePacket(protocol.EncryptionLevel) (*packedPacket, error)
 	MaybePackAckPacket(handshakeConfirmed bool) (*packedPacket, error)
 	PackConnectionClose(*qerr.QuicError) (*coalescedPacket, error)
@@ -404,8 +404,8 @@ func (p *packetPacker) packCoalescedPacket(buffer *packetBuffer, maxPacketSize p
 
 // PackPacket packs a packet in the application data packet number space.
 // It should be called after the handshake is confirmed.
-func (p *packetPacker) PackPacket() (*packedPacket, error) {
-	buffer := getPacketBuffer(true)
+func (p *packetPacker) PackPacket(multi *bool) (*packedPacket, error) {
+	buffer := getPacketBuffer(*multi)
 
 	contents, err := p.maybeAppendAppDataPacket(buffer, p.maxPacketSize)
 	if err != nil || contents == nil {
@@ -529,6 +529,10 @@ func (p *packetPacker) maybeAppendAppDataPacket(buffer *packetBuffer, maxPacketS
 		}
 	} else {
 		p.numNonAckElicitingAcks = 0
+	}
+
+	if buffer.Multi {
+		encLevel = protocol.EncryptionMulti
 	}
 
 	return p.appendPacket(buffer, header, payload, encLevel, sealer)
@@ -707,7 +711,7 @@ func (p *packetPacker) appendPacket(
 	sealer sealer,
 ) (*packetContents, error) {
 	if buffer.Multi {
-		//header.Type = protocol.PacketTypeMulti
+
 	}
 	var paddingLen protocol.ByteCount
 	pnLen := protocol.ByteCount(header.PacketNumberLen)
@@ -750,23 +754,26 @@ func (p *packetPacker) appendPacket(
 	// encrypt the packet
 	//println("Packet number")
 	//fmt.Println(header.PacketNumber)
-	println("Packet type")
-	fmt.Println(header.Type)
-
+	//println("Packet type " + header.PacketType())
+	//fmt.Println("Packet no ", header.PacketNumber)
 	if buffer.Multi {
 
 		raw = raw[:buf.Len()]
 		//println("No encryption")
 		//buffer.Data = simpleEncrypt(raw)
 
-		//fmt.Println(raw)
 		//log.Println("dst ", raw[payloadOffset:payloadOffset], " src ", raw[payloadOffset:], " packet number ", header.PacketNumber, " raw ", raw[hdrOffset:payloadOffset])
-		_ = sealer.MultiSeal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
-		raw = raw[0 : buf.Len()+sealer.Overhead()]
-		// apply header protection
-		pnOffset := payloadOffset - int(header.PacketNumberLen)
-		sealer.MultiEncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
+		/*
+			_ = sealer.Seal(raw[payloadOffset:payloadOffset], raw[payloadOffset:], header.PacketNumber, raw[hdrOffset:payloadOffset])
+			raw = raw[0 : buf.Len()+sealer.Overhead()]
+			// apply header protection
+			pnOffset := payloadOffset - int(header.PacketNumberLen)
+			sealer.EncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
+		*/
 		buffer.Data = raw
+		print(" ")
+		print(len(buffer.Data))
+		//fmt.Println(buffer.Data)
 
 		//log.Println("after encryption dst ", raw[payloadOffset:payloadOffset], " src ", raw[payloadOffset:], " packet number ", header.PacketNumber, " raw ", raw[hdrOffset:payloadOffset])
 		//fmt.Println(raw)
