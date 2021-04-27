@@ -367,6 +367,9 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 
 	handler := s.UniCast.Handler
 
+	fmt.Println()
+	fmt.Println("multicast ", req.Header["Multicast"])
+
 	//Decide when to retransmit on multicast or unicast segment
 	if !multiRequest[req.RequestURI] && (strings.Contains(req.RequestURI, ".ts") || strings.Contains(req.RequestURI, ".mp4")) {
 		multiRequest[req.RequestURI] = true

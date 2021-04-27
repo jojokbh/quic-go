@@ -207,8 +207,10 @@ func main() {
 	*/
 	for _, addr := range urls {
 		logger.Infof("GET %s", addr)
+		req, _ := http.NewRequest("GET", addr, nil)
+		req.Header.Set("multicast", "true")
 
-		rsp, err := hclient.Get(addr)
+		rsp, err := hclient.Do(req)
 		if err != nil {
 			log.Fatal(err)
 		}

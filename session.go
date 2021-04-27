@@ -1261,8 +1261,6 @@ func (s *session) handleUnpackedPacket(
 		}
 	}
 
-	println("So far so good")
-
 	return s.receivedPacketHandler.ReceivedPacket(packet.packetNumber, packet.encryptionLevel, rcvTime, isAckEliciting)
 }
 

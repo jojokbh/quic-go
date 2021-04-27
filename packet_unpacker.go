@@ -172,9 +172,7 @@ func (u *packetUnpacker) unpackShortHeaderPacket(
 	rcvTime time.Time,
 	data []byte,
 ) (*wire.ExtendedHeader, []byte, error) {
-	fmt.Println("Unpack")
 	//fmt.Println(data)
-	fmt.Println(hdr)
 	extHdr, parseErr := u.unpackHeader(opener, hdr, data)
 	// If the reserved bits are set incorrectly, we still need to continue unpacking.
 	// This avoids a timing side-channel, which otherwise might allow an attacker

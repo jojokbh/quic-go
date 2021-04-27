@@ -63,7 +63,7 @@ func (h *receivedPacketHandler) ReceivedPacket(
 		if h.lowest1RTTPacket == protocol.InvalidPacketNumber || pn < h.lowest1RTTPacket {
 			h.lowest1RTTPacket = pn
 		}
-		println("So far so good 2 ")
+		//println("So far so good 2 ")
 		h.appDataPackets.IgnoreBelow(h.sentPackets.GetLowestPacketNotConfirmedAcked())
 		h.appDataPackets.ReceivedPacket(pn, rcvTime, shouldInstigateAck)
 	default:
