@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.19.5 (2021-04-08)
+## v0.19.5 (2021-04-27)
 Unencrypted on multicast
 
 ## v0.19.0 (2021-04-08)
