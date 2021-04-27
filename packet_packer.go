@@ -751,7 +751,8 @@ func (p *packetPacker) appendPacket(
 	}
 
 	raw := buffer.Data
-	if len(raw) < 100 {
+	if len(raw) < 100 && buffer.Multi {
+		fmt.Println(" Weird Packet ", raw, " h ", header, " p ", payload)
 		buffer.Multi = false
 	}
 	// encrypt the packet
