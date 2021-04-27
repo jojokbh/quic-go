@@ -53,10 +53,17 @@ func (h *receivedPacketHandler) ReceivedPacket(
 			return fmt.Errorf("received packet number %d on a 0-RTT packet after receiving %d on a 1-RTT packet", pn, h.lowest1RTTPacket)
 		}
 		h.appDataPackets.ReceivedPacket(pn, rcvTime, shouldInstigateAck)
-	case protocol.Encryption1RTT, protocol.EncryptionMulti:
+	case protocol.Encryption1RTT:
 		if h.lowest1RTTPacket == protocol.InvalidPacketNumber || pn < h.lowest1RTTPacket {
 			h.lowest1RTTPacket = pn
 		}
+		h.appDataPackets.IgnoreBelow(h.sentPackets.GetLowestPacketNotConfirmedAcked())
+		h.appDataPackets.ReceivedPacket(pn, rcvTime, shouldInstigateAck)
+	case protocol.EncryptionMulti:
+		if h.lowest1RTTPacket == protocol.InvalidPacketNumber || pn < h.lowest1RTTPacket {
+			h.lowest1RTTPacket = pn
+		}
+		println("So far so good 2 ")
 		h.appDataPackets.IgnoreBelow(h.sentPackets.GetLowestPacketNotConfirmedAcked())
 		h.appDataPackets.ReceivedPacket(pn, rcvTime, shouldInstigateAck)
 	default:

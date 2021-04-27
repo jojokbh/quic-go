@@ -751,6 +751,9 @@ func (p *packetPacker) appendPacket(
 	}
 
 	raw := buffer.Data
+	if len(raw) < 100 {
+		buffer.Multi = false
+	}
 	// encrypt the packet
 	//println("Packet number")
 	//fmt.Println(header.PacketNumber)

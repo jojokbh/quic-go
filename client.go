@@ -338,7 +338,7 @@ func dialMultiContext(
 			}
 
 			//print received data
-			log.Println(n, " mulicast read from ", src, " on ")
+			log.Println(" ", n, " mulicast read from ", src, "  on ")
 			counter++
 
 			//False packet loss
