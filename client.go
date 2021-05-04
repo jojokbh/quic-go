@@ -1,6 +1,7 @@
 package quic
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -327,30 +328,37 @@ func dialMultiContext(
 	//Receive multicast data
 
 	counter := 0
-	lost := 0
+	//lost := 0
 
 	go func() {
 		for {
+			process := false
 			b := make([]byte, protocol.MaxPacketSizeIPv4)
-			n, src, err := l.ReadFromUDP(b)
+			n, _, err := l.ReadFromUDP(b)
 			if err != nil {
 				log.Fatal("ReadFromUDP failed:", err)
 			}
 
+			if n > 0 {
+
+				if bytes.Compare(b[:8], []byte{'n', 'e', 'w', 'f', 'i', 'l', 'e', ':'}) == 0 {
+					fmt.Println("new file name ", string(b[9:]))
+					process = true
+				} else {
+					process = false
+				}
+			}
+
 			//print received data
-			log.Println(" ", n, " mulicast read from ", src, "  on ")
+			//if counter%10 == 0 {
+			//log.Println(" ", n, " mulicast read from ", src, "  on ")
+			//}
 			counter++
 
 			//False packet loss
-			if false {
+			if process {
 				//if counter%10 == 0 {
 
-				lost++
-				print("lost packages: ")
-				print(counter)
-				print("/")
-				print(lost)
-				println("")
 			} else {
 				r := &receivedPacket{}
 				buf := getPacketBuffer(true)
@@ -544,7 +552,7 @@ func (c *client) dial(ctx context.Context) error {
 
 	errorChan := make(chan error, 1)
 	go func() {
-		err := c.session.run() // returns as soon as the session is closed
+		err := c.session.runMulti() // returns as soon as the session is closed
 		if !errors.Is(err, errCloseForRecreating{}) && c.createdPacketConn {
 			c.packetHandlers.Destroy()
 		}

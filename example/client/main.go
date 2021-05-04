@@ -44,7 +44,9 @@ func main() {
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
 	flag.Parse()
 	//urls := [1]string{"https://" + hostString + ":8081/demo/text"}
-	urls := [2]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts"}
+	//urls := [1]string{"https://" + hostString + ":8081/index.m3u8"}
+	//urls := [2]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts"}
+	urls := [3]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts"}
 	//urls := [8]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts", "https://" + hostString + ":8081/index2.ts", "https://" + hostString + ":8081/index3.ts", "https://" + hostString + ":8081/index4.ts", "https://" + hostString + ":8081/index5.ts", "https://" + hostString + ":8081/index6.ts"}
 	//urls := [2]string{"https://localhost:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 	//urls := [4]string{"https://"+hostString+":8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
@@ -205,6 +207,13 @@ func main() {
 		var wg sync.WaitGroup
 		wg.Add(len(urls))
 	*/
+	var src *PassThru
+	var reader io.Reader
+	reader = bufio.NewReader(reader)
+
+	src = &PassThru{Reader: reader}
+	fmt.Println(src)
+
 	for _, addr := range urls {
 		logger.Infof("GET %s", addr)
 		req, _ := http.NewRequest("GET", addr, nil)
@@ -252,6 +261,56 @@ func main() {
 
 	//wg.Wait()
 
+}
+
+// PassThru wraps an existing io.Reader.
+//
+// It simply forwards the Read() call, while displaying
+// the results from individual calls to it.
+type PassThru struct {
+	Reader io.Reader
+	total  int64 // Total # of bytes transferred
+	done   bool  // Total # of bytes transferred
+	//File     *os.File
+	buf      []byte // contents are the bytes buf[off : len(buf)]
+	off      int    // read at &buf[off], write at &buf[len(buf)]
+	lastRead readOp
+}
+
+type readOp int8
+
+// Don't use iota for these, as the values need to correspond with the
+// names and comments, which is easier to see when being explicit.
+const (
+	opRead      readOp = -1 // Any other read operation.
+	opInvalid   readOp = 0  // Non-read operation.
+	opReadRune1 readOp = 1  // Read rune of size 1.
+	opReadRune2 readOp = 2  // Read rune of size 2.
+	opReadRune3 readOp = 3  // Read rune of size 3.
+	opReadRune4 readOp = 4  // Read rune of size 4.
+)
+
+// Read 'overrides' the underlying io.Reader's Read method.
+// This is the one that will be called by io.Copy(). We simply
+// use it to keep track of byte counts and then forward the call.
+func (pt *PassThru) Read(p []byte) (int, error) {
+	n, err := pt.Reader.Read(p)
+	if err == nil {
+		pt.total += int64(n)
+		fmt.Println("Read", n, "bytes for a total of", pt.total)
+	}
+	if int64(n) == pt.total {
+		//pt.Reader.CancelRead(0)
+		fmt.Println("Done pass")
+		pt.done = true
+	}
+	return n, err
+}
+
+func (pt *PassThru) stopPassThru() {
+	//pt.Reader.CancelRead(1)
+	//pt.File.Close()
+	fmt.Println("Stop pass")
 }
 
 func udpReader(c *ipv4.PacketConn, ifname, ifaddr string) {

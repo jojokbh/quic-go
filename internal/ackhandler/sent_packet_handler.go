@@ -260,7 +260,7 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 	pnSpace := h.getPacketNumberSpace(encLevel)
 
 	largestAcked := ack.LargestAcked()
-	if largestAcked > pnSpace.largestSent {
+	if largestAcked > pnSpace.largestSent && encLevel != protocol.EncryptionMulti {
 
 		return qerr.NewError(qerr.ProtocolViolation, "Received ACK for an unsent packet")
 	}

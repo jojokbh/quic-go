@@ -336,6 +336,7 @@ func (c *client) doRequest(
 	reqDone chan struct{},
 ) (*http.Response, requestError) {
 	var requestGzip bool
+
 	if !c.opts.DisableCompression && req.Method != "HEAD" && req.Header.Get("Accept-Encoding") == "" && req.Header.Get("Range") == "" {
 		requestGzip = true
 	}

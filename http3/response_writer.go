@@ -3,6 +3,7 @@ package http3
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -51,12 +52,14 @@ func (w *responseWriter) WriteHeader(status int) {
 	for k, v := range w.header {
 		for index := range v {
 			enc.WriteField(qpack.HeaderField{Name: strings.ToLower(k), Value: v[index]})
+			fmt.Println("H: ", k, " v ", v[index])
 		}
 	}
 
 	buf := &bytes.Buffer{}
 	(&headersFrame{Length: uint64(headers.Len())}).Write(buf)
 	w.logger.Infof("Responding with %d", status)
+
 	if _, err := w.stream.Write(buf.Bytes()); err != nil {
 		w.logger.Errorf("could not write headers frame: %s", err.Error())
 	}

@@ -688,9 +688,14 @@ runLoop:
 			// Only reset the timers if this packet was actually processed.
 			// This avoids modifying any state when handling undecryptable packets,
 			// which could be injected by an attacker.
-
-			if wasProcessed := s.handlePacketMultiImpl(p); !wasProcessed {
-				continue
+			if p.buffer.Multi {
+				if wasProcessed := s.handlePacketMultiImpl(p); !wasProcessed {
+					continue
+				}
+			} else {
+				if wasProcessed := s.handlePacketImpl(p); !wasProcessed {
+					continue
+				}
 			}
 
 			// Don't set timers and send packets if the packet made us close the session.
@@ -768,6 +773,10 @@ func (s *session) SetMulti(b bool) {
 		s.multi = &b
 		s.sendQueue.multi = b
 	}
+}
+
+func (s *session) NewFile(b string) {
+	s.conn.WriteMulti([]byte("newfile:" + b))
 }
 
 func newTrue() *bool {
@@ -966,6 +975,7 @@ func (s *session) handlePacketMultiImpl(rp *receivedPacket) bool {
 		if s.logger.Debug() && (counter > 1 || len(rest) > 0) {
 			s.logger.Debugf("Parsed a coalesced packet. Part %d: %d bytes. Remaining: %d bytes.", counter, len(packetData), len(rest))
 		}
+
 		p.data = packetData
 		if wasProcessed := s.handleSinglePacket(p, hdr); wasProcessed {
 			processed = true
@@ -1229,7 +1239,9 @@ func (s *session) handleUnpackedPacket(
 		}
 		// Only process frames now if we're not logging.
 		// If we're logging, we need to make sure that the packet_received event is logged first.
-		if s.tracer == nil && !packet.multi {
+		//Fix here# handleframe multi
+		//if s.tracer == nil && !packet.multi {
+		if s.tracer == nil {
 			if err := s.handleFrame(frame, packet.encryptionLevel, packet.hdr.DestConnectionID); err != nil {
 				return err
 			}
@@ -1266,7 +1278,7 @@ func (s *session) handleUnpackedPacket(
 
 func (s *session) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel, destConnID protocol.ConnectionID) error {
 	var err error
-
+	fmt.Println("Frame ", f, " e ", encLevel, " d ", destConnID)
 	wire.LogFrame(s.logger, f, false)
 	switch frame := f.(type) {
 	case *wire.CryptoFrame:
@@ -1320,7 +1332,6 @@ func (s *session) handlePacket(p *receivedPacket) {
 	}
 }
 
-/*
 // handlePacket is called by the server with a new packet
 func (s *session) handleMultiPacket(p *receivedPacket) {
 
@@ -1331,12 +1342,13 @@ func (s *session) handleMultiPacket(p *receivedPacket) {
 	default:
 	}
 }
-*/
 
 // handlePacket is called by the server with a new packet
+/*
 func (s *session) handleMultiPacket(p *receivedPacket) {
 	s.handlePacketMultiImpl(p)
 }
+*/
 
 func (s *session) handleConnectionCloseFrame(frame *wire.ConnectionCloseFrame) {
 	var e error

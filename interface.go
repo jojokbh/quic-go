@@ -186,6 +186,8 @@ type Session interface {
 	ConnectionState() ConnectionState
 	//Set multicast connection
 	SetMulti(bool)
+	//Send new file name
+	NewFile(string)
 }
 
 // An EarlySession is a session that is handshaetking.

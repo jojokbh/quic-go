@@ -396,6 +396,8 @@ func (p *packetPacker) packCoalescedPacket(buffer *packetBuffer, maxPacketSize p
 		return nil, err
 	}
 	if contents != nil {
+		//
+		fmt.Println("Set multi buffer")
 		buffer.SetMulti(true)
 		packet.packets = append(packet.packets, contents)
 	}
@@ -711,7 +713,7 @@ func (p *packetPacker) appendPacket(
 	sealer sealer,
 ) (*packetContents, error) {
 	if buffer.Multi {
-
+		//fmt.Println("multi append")
 	}
 	var paddingLen protocol.ByteCount
 	pnLen := protocol.ByteCount(header.PacketNumberLen)
@@ -751,7 +753,9 @@ func (p *packetPacker) appendPacket(
 	}
 
 	raw := buffer.Data
-	if len(raw) < 100 && buffer.Multi {
+	raw = raw[:buf.Len()]
+
+	if len(raw[:buf.Len()]) < 100 && buffer.Multi {
 		//fmt.Println(" Weird Packet ", raw, " h ", header, " p ", payload)
 		buffer.Multi = false
 	}
@@ -762,7 +766,6 @@ func (p *packetPacker) appendPacket(
 	//fmt.Println("Packet no ", header.PacketNumber)
 	if buffer.Multi {
 
-		raw = raw[:buf.Len()]
 		//println("No encryption")
 		//buffer.Data = simpleEncrypt(raw)
 
@@ -775,14 +778,13 @@ func (p *packetPacker) appendPacket(
 			sealer.EncryptHeader(raw[pnOffset+4:pnOffset+4+16], &raw[hdrOffset], raw[pnOffset:payloadOffset])
 		*/
 		buffer.Data = raw
-		print(" ")
-		print(len(buffer.Data))
+
 		//fmt.Println(buffer.Data)
 
 		//log.Println("after encryption dst ", raw[payloadOffset:payloadOffset], " src ", raw[payloadOffset:], " packet number ", header.PacketNumber, " raw ", raw[hdrOffset:payloadOffset])
 		//fmt.Println(raw)
 	} else {
-		raw = raw[:buf.Len()]
+
 		//println("No encryption uni")
 		//fmt.Println(raw)
 

@@ -122,6 +122,7 @@ func (s *Server) ListenAndServeTLSMulti(config *tls.Config, ifat *net.Interface)
 		}
 	*/
 	multiRequest = map[string]bool{}
+	sessions = map[string][]quic.Stream{}
 	return s.serveImplMulti(config, ifat, nil, nil)
 }
 
@@ -319,6 +320,7 @@ func (s *Server) maxHeaderBytes() uint64 {
 }
 
 var multiRequest map[string]bool
+var sessions map[string][]quic.Stream
 
 func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpack.Decoder, onFrameError func()) requestError {
 	frame, err := parseNextFrame(str)
@@ -376,6 +378,21 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 		fmt.Println("Set multicast handler!!")
 		handler = s.MultiCast.Handler
 		sess.SetMulti(true)
+		sess.NewFile(req.RequestURI)
+		/*
+			for s, r := range sessions {
+				for _, q := range r {
+					fmt.Println(s, " write to ", q.StreamID())
+					q.Write([]byte("is this received?"))
+				}
+			}
+		*/
+	} else if strings.Contains(req.RequestURI, ".m3u8") {
+		if sessions[req.RequestURI] == nil {
+			sessions[req.RequestURI] = []quic.Stream{}
+		}
+		sessions[req.RequestURI] = append(sessions[req.RequestURI], str)
+		sess.SetMulti(false)
 	} else {
 		sess.SetMulti(false)
 	}
@@ -396,7 +413,9 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 				panicked = true
 			}
 		}()
+
 		handler.ServeHTTP(responseWriter, req)
+		fmt.Println(responseWriter.Header())
 	}()
 
 	if panicked {

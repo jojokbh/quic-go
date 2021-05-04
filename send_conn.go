@@ -76,7 +76,6 @@ func (c *multiConn) Write(p []byte) error {
 }
 
 func (c *multiConn) WriteMulti(p []byte) error {
-	//fmt.Println("Write Multi")
 
 	//time.Sleep(time.Microsecond * 10)
 	_, err := c.mConn.Write(p)
