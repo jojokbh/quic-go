@@ -937,6 +937,7 @@ func (s *session) handlePacketMultiImpl(rp *receivedPacket) bool {
 		}
 
 		hdr, packetData, rest, err := wire.ParsePacket(p.data, s.srcConnIDLen)
+		hdr.DestConnectionID = lastConnID
 		if err != nil {
 			if s.tracer != nil {
 				dropReason := logging.PacketDropHeaderParseError
@@ -984,6 +985,60 @@ func (s *session) handlePacketMultiImpl(rp *receivedPacket) bool {
 	}
 	p.buffer.MaybeRelease()
 	return processed
+}
+
+func (s *session) handlePacketMultiImplSimple(rp receivedPacket) (unpackedPacket, wire.Header, error) {
+	var counter uint8
+	var lastConnID protocol.ConnectionID
+	var hdr *wire.Header
+	//var processed bool
+	data := rp.data
+	s.sentPacketHandler.ReceivedBytes(protocol.ByteCount(len(data)))
+
+	hdr, packetData, rest, err := wire.ParsePacket(data, s.srcConnIDLen)
+	hdr.DestConnectionID = lastConnID
+	if err != nil {
+		if s.tracer != nil {
+			dropReason := logging.PacketDropHeaderParseError
+			if err == wire.ErrUnsupportedVersion {
+				dropReason = logging.PacketDropUnsupportedVersion
+			}
+			s.tracer.DroppedPacket(logging.PacketTypeNotDetermined, protocol.ByteCount(len(data)), dropReason)
+		}
+		s.logger.Debugf("error parsing packet: %s", err)
+		return unpackedPacket{}, *hdr, fmt.Errorf("err#1")
+	}
+
+	if hdr.IsLongHeader && hdr.Version != s.version {
+		if s.tracer != nil {
+			s.tracer.DroppedPacket(logging.PacketTypeFromHeader(hdr), protocol.ByteCount(len(data)), logging.PacketDropUnexpectedVersion)
+		}
+		s.logger.Debugf("Dropping packet with version %x. Expected %x.", hdr.Version, s.version)
+		return unpackedPacket{}, *hdr, fmt.Errorf("err#2")
+	}
+
+	if counter > 0 && !hdr.DestConnectionID.Equal(lastConnID) {
+		if s.tracer != nil {
+			s.tracer.DroppedPacket(logging.PacketTypeFromHeader(hdr), protocol.ByteCount(len(data)), logging.PacketDropUnknownConnectionID)
+		}
+		s.logger.Debugf("coalesced packet has different destination connection ID: %s, expected %s", hdr.DestConnectionID, lastConnID)
+		return unpackedPacket{}, *hdr, fmt.Errorf("err#3")
+	}
+
+	// only log if this actually a coalesced packet
+	if s.logger.Debug() && (counter > 1 || len(rest) > 0) {
+		s.logger.Debugf("Parsed a coalesced packet. Part %d: %d bytes. Remaining: %d bytes.", counter, len(packetData), len(rest))
+	}
+
+	rp.data = packetData
+	//data = rest
+
+	if len(rest) > 0 {
+		fmt.Println(data)
+	}
+	packet, err := s.unpacker.Unpack(hdr, rp.rcvTime, rp.data, true)
+
+	return *packet, *hdr, nil
 }
 
 func (s *session) handleSinglePacket(p *receivedPacket, hdr *wire.Header) bool /* was the packet successfully processed */ {
@@ -1045,7 +1100,7 @@ func (s *session) handleSinglePacket(p *receivedPacket, hdr *wire.Header) bool /
 		packet.hdr.Log(s.logger)
 	}
 
-	if !p.buffer.Multi {
+	if false {
 		if s.receivedPacketHandler.IsPotentiallyDuplicate(packet.packetNumber, packet.encryptionLevel) {
 			s.logger.Debugf("Dropping (potentially) duplicate packet.")
 			if s.tracer != nil {
@@ -1276,9 +1331,10 @@ func (s *session) handleUnpackedPacket(
 	return s.receivedPacketHandler.ReceivedPacket(packet.packetNumber, packet.encryptionLevel, rcvTime, isAckEliciting)
 }
 
+//Implement multicast of streamframe
 func (s *session) handleFrame(f wire.Frame, encLevel protocol.EncryptionLevel, destConnID protocol.ConnectionID) error {
 	var err error
-	fmt.Println("Frame ", f, " e ", encLevel, " d ", destConnID)
+	//fmt.Println("Frame ", f, " e ", encLevel, " d ", destConnID)
 	wire.LogFrame(s.logger, f, false)
 	switch frame := f.(type) {
 	case *wire.CryptoFrame:
@@ -1333,7 +1389,7 @@ func (s *session) handlePacket(p *receivedPacket) {
 }
 
 // handlePacket is called by the server with a new packet
-func (s *session) handleMultiPacket(p *receivedPacket) {
+func (s *session) handleMultiPacketChan(p *receivedPacket) {
 
 	// Discard packets once the amount of queued packets is larger than
 	// the channel size, protocol.MaxSessionUnprocessedPackets
@@ -1344,11 +1400,11 @@ func (s *session) handleMultiPacket(p *receivedPacket) {
 }
 
 // handlePacket is called by the server with a new packet
-/*
-func (s *session) handleMultiPacket(p *receivedPacket) {
-	s.handlePacketMultiImpl(p)
+
+func (s *session) handleMultiPacket(p *receivedPacket) (unpackedPacket, wire.Header, error) {
+	go s.handleMultiPacketChan(p)
+	return s.handlePacketMultiImplSimple(*p)
 }
-*/
 
 func (s *session) handleConnectionCloseFrame(frame *wire.ConnectionCloseFrame) {
 	var e error

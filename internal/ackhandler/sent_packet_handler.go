@@ -260,14 +260,14 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 	pnSpace := h.getPacketNumberSpace(encLevel)
 
 	largestAcked := ack.LargestAcked()
-	if largestAcked > pnSpace.largestSent && encLevel != protocol.EncryptionMulti {
+	if largestAcked > pnSpace.largestSent && encLevel != protocol.EncryptionMulti && false {
 
 		return qerr.NewError(qerr.ProtocolViolation, "Received ACK for an unsent packet")
 	}
 
 	pnSpace.largestAcked = utils.MaxPacketNumber(pnSpace.largestAcked, largestAcked)
 
-	if !pnSpace.pns.Validate(ack) {
+	if !pnSpace.pns.Validate(ack) && false {
 
 		return qerr.NewError(qerr.ProtocolViolation, "Received an ACK for a skipped packet number")
 	}

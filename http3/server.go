@@ -65,6 +65,10 @@ type Server struct {
 	UniCast   *http.Server
 	MultiCast *http.Server
 
+	Multistream quic.Stream
+
+	MultiStreamID int64
+
 	// By providing a quic.Config, it is possible to set parameters of the QUIC connection.
 	// If nil, it uses reasonable default values.
 	QuicConfig *quic.Config
@@ -121,8 +125,9 @@ func (s *Server) ListenAndServeTLSMulti(config *tls.Config, ifat *net.Interface)
 			Certificates: certs,
 		}
 	*/
-	multiRequest = map[string]bool{}
+	multiRequest = map[string]int64{}
 	sessions = map[string][]quic.Stream{}
+	s.MultiStreamID = 0
 	return s.serveImplMulti(config, ifat, nil, nil)
 }
 
@@ -245,6 +250,9 @@ func (s *Server) serveImplMulti(tlsConf *tls.Config, ifat *net.Interface, conn n
 		if err != nil {
 			return err
 		}
+		if s.Multistream == nil {
+			//go s.handleMultiConn(sess)
+		}
 		go s.handleConn(sess)
 	}
 }
@@ -290,6 +298,7 @@ func (s *Server) handleConn(sess quic.EarlySession) {
 			return
 		}
 		go func() {
+
 			rerr := s.handleRequest(sess, str, decoder, func() {
 				sess.CloseWithError(quic.ErrorCode(errorFrameUnexpected), "")
 			})
@@ -312,6 +321,59 @@ func (s *Server) handleConn(sess quic.EarlySession) {
 	}
 }
 
+func (s *Server) handleMultiConn(sess quic.EarlySession) {
+	// TODO: accept control streams
+	//decoder := qpack.NewDecoder(nil)
+
+	// send a SETTINGS frame
+	strMulti, err := sess.OpenUniStream()
+	if err != nil {
+		s.logger.Debugf("Opening the control stream failed.")
+		return
+	}
+	buf := bytes.NewBuffer([]byte{0})
+	(&settingsFrame{}).Write(buf)
+	strMulti.Write(buf.Bytes())
+
+	strMulti, err = sess.AcceptStream(context.Background())
+	if err != nil {
+		s.logger.Debugf("Accepting stream failed: %s", err)
+		return
+	}
+
+	// Process all requests immediately.
+	// It's the client's responsibility to decide which requests are eligible for 0-RTT.
+	for {
+		_, err := sess.AcceptStream(context.Background())
+		if err != nil {
+			s.logger.Debugf("Accepting stream failed: %s", err)
+			return
+		}
+		/*
+			go func() {
+				rerr := s.handleRequest(sess, strMulti, decoder, func() {
+					sess.CloseWithError(quic.ErrorCode(errorFrameUnexpected), "")
+				})
+				if rerr.err != nil || rerr.streamErr != 0 || rerr.connErr != 0 {
+					s.logger.Debugf("Handling request failed: %s", err)
+					if rerr.streamErr != 0 {
+						strMulti.CancelWrite(quic.ErrorCode(rerr.streamErr))
+					}
+					if rerr.connErr != 0 {
+						var reason string
+						if rerr.err != nil {
+							reason = rerr.err.Error()
+						}
+						sess.CloseWithError(quic.ErrorCode(rerr.connErr), reason)
+					}
+					return
+				}
+				strMulti.Close()
+			}()
+		*/
+	}
+}
+
 func (s *Server) maxHeaderBytes() uint64 {
 	if s.UniCast.MaxHeaderBytes <= 0 {
 		return http.DefaultMaxHeaderBytes
@@ -319,7 +381,7 @@ func (s *Server) maxHeaderBytes() uint64 {
 	return uint64(s.UniCast.MaxHeaderBytes)
 }
 
-var multiRequest map[string]bool
+var multiRequest map[string]int64
 var sessions map[string][]quic.Stream
 
 func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpack.Decoder, onFrameError func()) requestError {
@@ -373,9 +435,9 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 	fmt.Println("multicast ", req.Header["Multicast"])
 
 	//Decide when to retransmit on multicast or unicast segment
-	if !multiRequest[req.RequestURI] && (strings.Contains(req.RequestURI, ".ts") || strings.Contains(req.RequestURI, ".mp4")) {
-		multiRequest[req.RequestURI] = true
-		fmt.Println("Set multicast handler!!")
+	if _, ok := multiRequest[req.RequestURI]; !ok && (strings.Contains(req.RequestURI, ".ts") || strings.Contains(req.RequestURI, ".mp4")) {
+		multiRequest[req.RequestURI] = int64(str.StreamID())
+		fmt.Println("Set multicast handler!! ", str.StreamID())
 		handler = s.MultiCast.Handler
 		sess.SetMulti(true)
 		sess.NewFile(req.RequestURI)

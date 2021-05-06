@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -328,8 +329,13 @@ func dialMultiContext(
 	//Receive multicast data
 
 	counter := 0
-	//lost := 0
-
+	lost := 0
+	prevPacket := int64(0)
+	name := ""
+	var w *os.File
+	if false {
+		fmt.Println(w, counter, lost, prevPacket)
+	}
 	go func() {
 		for {
 			process := false
@@ -342,8 +348,14 @@ func dialMultiContext(
 			if n > 0 {
 
 				if bytes.Compare(b[:8], []byte{'n', 'e', 'w', 'f', 'i', 'l', 'e', ':'}) == 0 {
-					fmt.Println("new file name ", string(b[9:]))
+					name = string(b[9:n])
+					fmt.Println("new file name ", name)
 					process = true
+					w, err = os.Create(name)
+					if err != nil {
+
+					}
+
 				} else {
 					process = false
 				}
@@ -353,7 +365,6 @@ func dialMultiContext(
 			//if counter%10 == 0 {
 			//log.Println(" ", n, " mulicast read from ", src, "  on ")
 			//}
-			counter++
 
 			//False packet loss
 			if process {
@@ -368,7 +379,25 @@ func dialMultiContext(
 				r.data = b[:n]
 				r.buffer = buf
 
-				c.session.handleMultiPacket(r)
+				proccesedPacket, _, err := c.session.handleMultiPacket(r)
+				if err == nil {
+
+				}
+
+				counter++
+
+				if prevPacket+1 != int64(proccesedPacket.packetNumber) {
+					lost++
+				}
+
+				prevPacket = int64(proccesedPacket.packetNumber)
+
+				//w.Write(proccesedPacket.data)
+				fmt.Println("Received packet ", prevPacket)
+				fmt.Printf("lost: %d/%d", lost, counter)
+				fmt.Println()
+				fmt.Println(proccesedPacket.packetNumber, proccesedPacket.encryptionLevel)
+
 			}
 		}
 	}()

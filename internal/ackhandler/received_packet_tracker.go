@@ -48,7 +48,7 @@ func newReceivedPacketTracker(
 }
 
 func (h *receivedPacketTracker) ReceivedPacket(packetNumber protocol.PacketNumber, rcvTime time.Time, shouldInstigateAck bool) {
-	if packetNumber < h.ignoreBelow {
+	if packetNumber < h.ignoreBelow && false {
 		print("Ignore packet ")
 		println(packetNumber)
 

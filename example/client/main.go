@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	srvAddr         = "224.42.42.1:1235"
+	srvAddr         = "224.42.42.1:1236"
 	maxDatagramSize = 8192
 	hostString      = "localhost"
 	//hostString = "192.168.42.42"
@@ -45,8 +45,8 @@ func main() {
 	flag.Parse()
 	//urls := [1]string{"https://" + hostString + ":8081/demo/text"}
 	//urls := [1]string{"https://" + hostString + ":8081/index.m3u8"}
-	//urls := [2]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts"}
-	urls := [3]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts"}
+	urls := [2]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts"}
+	//urls := [3]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts"}
 	//urls := [8]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts", "https://" + hostString + ":8081/index2.ts", "https://" + hostString + ":8081/index3.ts", "https://" + hostString + ":8081/index4.ts", "https://" + hostString + ":8081/index5.ts", "https://" + hostString + ":8081/index6.ts"}
 	//urls := [2]string{"https://localhost:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 	//urls := [4]string{"https://"+hostString+":8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}

@@ -136,7 +136,7 @@ func (m *outgoingBidiStreamsMap) maybeSendBlockedFrame() {
 
 func (m *outgoingBidiStreamsMap) GetStream(num protocol.StreamNum) (streamI, error) {
 	m.mutex.RLock()
-	if num >= m.nextStream {
+	if num >= m.nextStream && false {
 		m.mutex.RUnlock()
 		return nil, streamError{
 			message: "peer attempted to open stream %d",

@@ -18,7 +18,6 @@ import (
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/internal/wire"
 	"github.com/jojokbh/quic-go/logging"
-	"golang.org/x/net/ipv4"
 )
 
 // packetHandler handles packets
@@ -47,7 +46,7 @@ type quicSession interface {
 	EarlySession
 	earlySessionReady() <-chan struct{}
 	handlePacket(*receivedPacket)
-	handleMultiPacket(*receivedPacket)
+	handleMultiPacket(*receivedPacket) (unpackedPacket, wire.Header, error)
 	GetVersion() protocol.VersionNumber
 	getPerspective() protocol.Perspective
 	run() error
@@ -165,26 +164,27 @@ func listenAddr(addr string, tlsConf *tls.Config, config *Config, acceptEarly bo
 func listenMultiAddr(addr string, multiAddr string, tlsConf *tls.Config, config *Config, ifat *net.Interface, acceptEarly bool) (*baseServer, error) {
 
 	fmt.Printf("a %s m: %s \n", addr, multiAddr)
+	/*
+		c, err := net.ListenPacket("udp4", multiAddr)
+		if err != nil {
+			println("Error #1 " + err.Error())
+		}
 
-	c, err := net.ListenPacket("udp4", multiAddr)
-	if err != nil {
-		println("Error #1 " + err.Error())
-	}
+		defer c.Close()
 
-	defer c.Close()
+		mHost, _, err := net.SplitHostPort(multiAddr)
+		if err != nil {
+			println("Split host error " + err.Error())
+		}
 
-	mHost, _, err := net.SplitHostPort(multiAddr)
-	if err != nil {
-		println("Split host error " + err.Error())
-	}
+		group := net.ParseIP(mHost)
 
-	group := net.ParseIP(mHost)
-
-	p := ipv4.NewPacketConn(c)
-	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
-		// error handling
-		println("Error #2 " + err.Error())
-	}
+		p := ipv4.NewPacketConn(c)
+		if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
+			// error handling
+			println("Error #2 " + err.Error())
+		}
+	*/
 
 	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
 	if err != nil {
