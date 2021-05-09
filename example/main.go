@@ -51,6 +51,15 @@ type Size interface {
 	Size() int64
 }
 
+/*
+Server commands with rely
+./rely add udp --application-in 127.0.0.1:1235 --tunnel-out 127.0.0.1:9090
+./udp-proxy -in 127.0.0.1:9090 -out 224.42.42.1:1237 -v 6
+//change server multicast addr to 127.0.0.1:1235
+./server  -bind 192.168.42.42:8081 -www video2/
+
+*/
+
 // See https://en.wikipedia.org/wiki/Lehmer_random_number_generator
 func generatePRData(l int) []byte {
 	res := make([]byte, l)
@@ -260,8 +269,9 @@ func main() {
 				//err = http3.ListenAndServe(bCap, certFile, keyFile, nil)
 			} else {
 				server := http3.Server{
-					UniCast:    &http.Server{Handler: handler, Addr: bCap},
-					MultiCast:  &http.Server{Handler: multicastHandler, Addr: "224.42.42.1:1235"},
+					UniCast: &http.Server{Handler: handler, Addr: bCap},
+					//MultiCast:  &http.Server{Handler: multicastHandler, Addr: "224.42.42.1:1235"},
+					MultiCast:  &http.Server{Handler: multicastHandler, Addr: "127.0.0.1:1235"},
 					QuicConfig: quicConf,
 				}
 				println("ListenMulti")

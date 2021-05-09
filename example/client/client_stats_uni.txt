@@ -1,0 +1,28 @@
+&{2 1500 wlp2s0 9c:b6:d0:da:db:59 up|broadcast|multicast}
+&{0xc0001e31a0 0 false [] 0 0}
+a 192.168.42.42:8081 m: 224.42.42.1:1236 
+Set multi buffer
+Set multi buffer
+Set multi buffer
+video
+video
+video
+video
+video
+video
+video
+video
+&{2 1500 wlp2s0 9c:b6:d0:da:db:59 up|broadcast|multicast}
+&{0xc0000b42a0 0 false [] 0 0}
+a 192.168.42.42:8081 m: 224.42.42.1:1236 
+Set multi buffer
+Set multi buffer
+Set multi buffer
+video
+video
+video
+video
+video
+video
+video
+video
