@@ -379,24 +379,27 @@ func dialMultiContext(
 				r.data = b[:n]
 				r.buffer = buf
 
-				proccesedPacket, _, err := c.session.handleMultiPacket(r)
-				if err == nil {
+				c.session.handleMultiPacket(r)
+				/*
+					_, _, err := c.session.handleMultiPacket(r)
+					if err == nil {
 
-				}
+					}
 
-				counter++
+						counter++
 
-				if prevPacket+1 != int64(proccesedPacket.packetNumber) {
-					lost++
-				}
+						if prevPacket+1 != int64(proccesedPacket.packetNumber) {
+							lost++
+						}
 
-				prevPacket = int64(proccesedPacket.packetNumber)
+						prevPacket = int64(proccesedPacket.packetNumber)
 
-				//w.Write(proccesedPacket.data)
-				fmt.Println("Received packet ", prevPacket)
-				fmt.Printf("lost: %d/%d", lost, counter)
-				fmt.Println()
-				fmt.Println(proccesedPacket.packetNumber, proccesedPacket.encryptionLevel)
+						//w.Write(proccesedPacket.data)
+						fmt.Println("Received packet ", prevPacket)
+						fmt.Printf("lost: %d/%d", lost, counter)
+						fmt.Println()
+						fmt.Println(proccesedPacket.packetNumber, proccesedPacket.encryptionLevel)
+				*/
 
 			}
 		}

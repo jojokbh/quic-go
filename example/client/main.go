@@ -32,8 +32,8 @@ const (
 	srvAddr         = "224.42.42.1:1236"
 	maxDatagramSize = 8192
 	//hostString      = "localhost"
-	hostString = "192.168.42.42"
-	//hostString = "ottb-ses.redirectme.net"
+	//hostString = "192.168.42.42"
+	hostString = "ottb-ses.redirectme.net"
 )
 
 /*

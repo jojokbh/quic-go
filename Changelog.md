@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.19.8 (2021-05-11)
+Fix client header err
+Unencrypted on multicast
+
 ## v0.19.7 (2021-04-27)
 Unencrypted on multicast
 

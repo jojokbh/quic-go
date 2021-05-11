@@ -269,9 +269,9 @@ func main() {
 				//err = http3.ListenAndServe(bCap, certFile, keyFile, nil)
 			} else {
 				server := http3.Server{
-					UniCast: &http.Server{Handler: handler, Addr: bCap},
-					//MultiCast:  &http.Server{Handler: multicastHandler, Addr: "224.42.42.1:1235"},
-					MultiCast:  &http.Server{Handler: multicastHandler, Addr: "127.0.0.1:1235"},
+					UniCast:   &http.Server{Handler: handler, Addr: bCap},
+					MultiCast: &http.Server{Handler: multicastHandler, Addr: "224.42.42.1:1235"},
+					//MultiCast:  &http.Server{Handler: multicastHandler, Addr: "224.42.42.1:1238"},
 					QuicConfig: quicConf,
 				}
 				println("ListenMulti")
