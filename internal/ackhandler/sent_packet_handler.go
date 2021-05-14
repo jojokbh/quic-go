@@ -506,6 +506,8 @@ func (h *sentPacketHandler) setLossDetectionTimer() {
 	}
 }
 
+var totalLost int = 0
+
 func (h *sentPacketHandler) detectAndRemoveLostPackets(now time.Time, encLevel protocol.EncryptionLevel) ([]*Packet, error) {
 	pnSpace := h.getPacketNumberSpace(encLevel)
 	pnSpace.lossTime = time.Time{}
@@ -548,12 +550,14 @@ func (h *sentPacketHandler) detectAndRemoveLostPackets(now time.Time, encLevel p
 		return nil, err
 	}
 
-	if h.logger.Debug() && len(lostPackets) > 0 {
+	if len(lostPackets) > 0 {
 		pns := make([]protocol.PacketNumber, len(lostPackets))
 		for i, p := range lostPackets {
 			pns[i] = p.PacketNumber
 		}
+		totalLost = totalLost + len(lostPackets)
 		h.logger.Debugf("\tlost packets (%d): %d", len(pns), pns)
+		h.logger.Infof("\tlost packets (%d):(%d) : %d", len(pns), totalLost, pns)
 	}
 
 	for _, p := range lostPackets {
@@ -762,6 +766,7 @@ func (h *sentPacketHandler) QueueProbePacket(encLevel protocol.EncryptionLevel) 
 }
 
 func (h *sentPacketHandler) queueFramesForRetransmission(p *Packet) {
+	p.multi = false
 	for _, f := range p.Frames {
 		f.OnLost(f.Frame)
 	}

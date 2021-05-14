@@ -31,15 +31,15 @@ import (
 const (
 	srvAddr         = "224.42.42.1:1236"
 	maxDatagramSize = 8192
-	//hostString      = "localhost"
+	hostString      = "localhost"
 	//hostString = "192.168.42.42"
-	hostString = "ottb-ses.redirectme.net"
+	//hostString = "ottb-ses.redirectme.net"
 )
 
 /*
 Client commands with rely
 ./rely add udp --application-out 224.42.42.1:1236 --tunnel-in 127.0.0.1:9090
-./udp-proxy -c -in 224.42.42.1:1237 -out 127.0.0.1:9090 -v 6
+./udp-proxy -c -in 224.42.42.1:1235 -out 127.0.0.1:9090 -v 6
 
 */
 func main() {

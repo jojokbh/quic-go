@@ -289,6 +289,10 @@ func dialContext(
 	return c.session, nil
 }
 
+var packets map[int64]bool
+var highestPacket int64 = 0
+var totalPackets int = 0
+
 func dialMultiContext(
 	ctx context.Context,
 	pconn net.PacketConn,
@@ -332,9 +336,13 @@ func dialMultiContext(
 	lost := 0
 	prevPacket := int64(0)
 	name := ""
+	if packets == nil {
+		packets = make(map[int64]bool)
+	}
+
 	var w *os.File
 	if false {
-		fmt.Println(w, counter, lost, prevPacket)
+		fmt.Println(w, counter, lost, prevPacket, packets)
 	}
 	go func() {
 		for {
@@ -371,6 +379,7 @@ func dialMultiContext(
 				//if counter%10 == 0 {
 
 			} else {
+				totalPackets++
 				r := &receivedPacket{}
 				buf := getPacketBuffer(true)
 				r.remoteAddr = remoteAddr
@@ -379,27 +388,10 @@ func dialMultiContext(
 				r.data = b[:n]
 				r.buffer = buf
 
-				c.session.handleMultiPacket(r)
-				/*
-					_, _, err := c.session.handleMultiPacket(r)
-					if err == nil {
-
-					}
-
-						counter++
-
-						if prevPacket+1 != int64(proccesedPacket.packetNumber) {
-							lost++
-						}
-
-						prevPacket = int64(proccesedPacket.packetNumber)
-
-						//w.Write(proccesedPacket.data)
-						fmt.Println("Received packet ", prevPacket)
-						fmt.Printf("lost: %d/%d", lost, counter)
-						fmt.Println()
-						fmt.Println(proccesedPacket.packetNumber, proccesedPacket.encryptionLevel)
-				*/
+				proccesedPacket, _, err := c.session.handleMultiPacket(r)
+				if err == nil {
+					go lostPacketsStats(proccesedPacket)
+				}
 
 			}
 		}
@@ -412,6 +404,32 @@ func dialMultiContext(
 		return nil, err
 	}
 	return c.session, nil
+}
+
+var lock = sync.Mutex{}
+
+func lostPacketsStats(proccesedPacket unpackedPacket) {
+
+	packetNumber := int64(proccesedPacket.packetNumber)
+
+	lock.Lock()
+	packets[packetNumber] = true
+
+	if packetNumber > highestPacket {
+		highestPacket = packetNumber
+	}
+	total := 0
+	lost := 0
+	for i := int64(0); i < highestPacket; i++ {
+		total++
+		if _, ok := packets[i]; !ok {
+			lost++
+		}
+	}
+	lost = totalPackets - lost
+	lock.Unlock()
+	fmt.Println()
+	fmt.Printf("Total/Lost: %d / %d / %d", total, lost, totalPackets)
 }
 
 func simpleDecrypt(raw []byte) []byte {
