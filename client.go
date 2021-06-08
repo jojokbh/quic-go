@@ -391,8 +391,9 @@ func dialMultiContext(
 				proccesedPacket, _, err := c.session.handleMultiPacket(r)
 				if err == nil {
 					go lostPacketsStats(proccesedPacket)
+				} else {
+					fmt.Println("error in proccesing packet: ", err)
 				}
-
 			}
 		}
 	}()
@@ -413,6 +414,9 @@ func lostPacketsStats(proccesedPacket unpackedPacket) {
 	packetNumber := int64(proccesedPacket.packetNumber)
 
 	lock.Lock()
+	if _, ok := packets[packetNumber]; ok {
+		fmt.Println("duplicate packet number ", packetNumber)
+	}
 	packets[packetNumber] = true
 
 	if packetNumber > highestPacket {

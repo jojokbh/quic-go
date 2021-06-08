@@ -23,7 +23,7 @@ import (
 
 type packer interface {
 	PackCoalescedPacket(protocol.ByteCount) (*coalescedPacket, error)
-	PackPacket(*bool) (*packedPacket, error)
+	PackPacket(bool) (*packedPacket, error)
 	MaybePackProbePacket(protocol.EncryptionLevel) (*packedPacket, error)
 	MaybePackAckPacket(handshakeConfirmed bool) (*packedPacket, error)
 	PackConnectionClose(*qerr.QuicError) (*coalescedPacket, error)
@@ -406,8 +406,8 @@ func (p *packetPacker) packCoalescedPacket(buffer *packetBuffer, maxPacketSize p
 
 // PackPacket packs a packet in the application data packet number space.
 // It should be called after the handshake is confirmed.
-func (p *packetPacker) PackPacket(multi *bool) (*packedPacket, error) {
-	buffer := getPacketBuffer(*multi)
+func (p *packetPacker) PackPacket(multi bool) (*packedPacket, error) {
+	buffer := getPacketBuffer(multi)
 
 	contents, err := p.maybeAppendAppDataPacket(buffer, p.maxPacketSize)
 	if err != nil || contents == nil {
@@ -596,7 +596,6 @@ func (p *packetPacker) MaybePackProbePacket(encLevel protocol.EncryptionLevel) (
 		println("hand")
 		contents, err = p.maybeAppendCryptoPacket(buffer, p.maxPacketSize, protocol.EncryptionHandshake)
 	case protocol.Encryption1RTT:
-		println("1rtt")
 		contents, err = p.maybeAppendAppDataPacket(buffer, p.maxPacketSize)
 	default:
 		panic("unknown encryption level")

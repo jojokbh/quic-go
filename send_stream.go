@@ -376,7 +376,7 @@ func (s *sendStream) queueRetransmission(f wire.Frame) {
 	}
 	s.mutex.Unlock()
 
-	s.sender.onHasStreamData(s.streamID)
+	s.sender.onHasStreamReData(s.streamID)
 }
 
 func (s *sendStream) Close() error {

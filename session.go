@@ -162,8 +162,9 @@ type session struct {
 	oneRTTStream        cryptoStream // only set for the server
 	cryptoStreamHandler cryptoStreamHandler
 
-	receivedPackets  chan *receivedPacket
-	sendingScheduled chan struct{}
+	receivedPackets   chan *receivedPacket
+	sendingScheduled  chan struct{}
+	sendingRetransfer chan struct{}
 
 	closeOnce sync.Once
 	// closeChan is used to notify the run loop that it should terminate
@@ -502,6 +503,7 @@ func (s *session) preSetup() {
 	s.receivedPackets = make(chan *receivedPacket, protocol.MaxSessionUnprocessedPackets)
 	s.closeChan = make(chan closeError, 1)
 	s.sendingScheduled = make(chan struct{}, 1)
+	s.sendingRetransfer = make(chan struct{}, 1)
 	s.undecryptablePackets = make([]*receivedPacket, 0, protocol.MaxUndecryptablePackets)
 	s.ctx, s.ctxCancel = context.WithCancel(context.Background())
 	s.handshakeCtx, s.handshakeCtxCancel = context.WithCancel(context.Background())
@@ -616,7 +618,7 @@ runLoop:
 			continue
 		}
 
-		if err := s.sendPackets(); err != nil {
+		if err := s.sendPackets(false); err != nil {
 			s.closeLocal(err)
 		}
 	}
@@ -674,6 +676,8 @@ runLoop:
 
 		s.maybeResetTimer()
 
+		multi := *s.multi
+
 		select {
 		case closeErr = <-s.closeChan:
 			break runLoop
@@ -684,10 +688,17 @@ runLoop:
 		case <-s.sendingScheduled:
 			// We do all the interesting stuff after the switch statement, so
 			// nothing to see here.
+			//multi = true
+		case <-s.sendingRetransfer:
+			// We do all the interesting stuff after the switch statement, so
+			// nothing to see here.
+			fmt.Println("Set false")
+			//multi = false
 		case p := <-s.receivedPackets:
 			// Only reset the timers if this packet was actually processed.
 			// This avoids modifying any state when handling undecryptable packets,
 			// which could be injected by an attacker.
+			now := time.Now()
 			if p.buffer.Multi {
 				if wasProcessed := s.handlePacketMultiImpl(p); !wasProcessed {
 					continue
@@ -697,6 +708,7 @@ runLoop:
 					continue
 				}
 			}
+			s.logger.Infof("Time to process ", (time.Now().Sub(now)))
 
 			// Don't set timers and send packets if the packet made us close the session.
 			select {
@@ -709,12 +721,14 @@ runLoop:
 		}
 
 		now := time.Now()
+
 		if timeout := s.sentPacketHandler.GetLossDetectionTimeout(); !timeout.IsZero() && timeout.Before(now) {
 			// This could cause packets to be retransmitted.
 			// Check it before trying to send packets.
 			if err := s.sentPacketHandler.OnLossDetectionTimeout(); err != nil {
 				s.closeLocal(err)
 			}
+			s.logger.Infof("Timeout ", timeout)
 		}
 
 		if keepAliveTime := s.nextKeepAliveTime(); !keepAliveTime.IsZero() && !now.Before(keepAliveTime) {
@@ -736,9 +750,14 @@ runLoop:
 			continue
 		}
 
-		if err := s.sendPackets(); err != nil {
+		if err := s.sendPackets(multi); err != nil {
 			s.closeLocal(err)
 		}
+
+		s.logger.Infof("Time to send ", (time.Now().Sub(now)))
+	}
+	if !s.client {
+		s.sendQueue.totalPackets()
 	}
 
 	s.handleCloseError(closeErr)
@@ -813,6 +832,8 @@ func (s *session) maybeResetTimer() {
 	}
 	if !s.pacingDeadline.IsZero() {
 		deadline = utils.MinTime(deadline, s.pacingDeadline)
+
+		s.logger.Infof("Timer deadline ", deadline)
 	}
 
 	s.timer.Reset(deadline)
@@ -1712,7 +1733,7 @@ func (s *session) processTransportParametersImpl(params *wire.TransportParameter
 	return nil
 }
 
-func (s *session) sendPackets() error {
+func (s *session) sendPackets(multi bool) error {
 	s.pacingDeadline = time.Time{}
 
 	var sentPacket bool // only used in for packets sent in send mode SendAny
@@ -1721,7 +1742,6 @@ func (s *session) sendPackets() error {
 		case ackhandler.SendNone:
 			return nil
 		case ackhandler.SendAck:
-			println("ACK send ack")
 			// If we already sent packets, and the send mode switches to SendAck,
 			// as we've just become congestion limited.
 			// There's no need to try to send an ACK at this moment.
@@ -1734,17 +1754,14 @@ func (s *session) sendPackets() error {
 			// SendAck is only returned when we're congestion limited, so we don't need to set the pacingt timer.
 			return s.maybeSendAckOnlyPacket()
 		case ackhandler.SendPTOInitial:
-			println("ACK send PTOinitial")
 			if err := s.sendProbePacket(protocol.EncryptionInitial); err != nil {
 				return err
 			}
 		case ackhandler.SendPTOHandshake:
-			println("ACK send PTOhandshake")
 			if err := s.sendProbePacket(protocol.EncryptionHandshake); err != nil {
 				return err
 			}
 		case ackhandler.SendPTOAppData:
-			println("ACK send PT0AppData")
 			if err := s.sendProbePacket(protocol.Encryption1RTT); err != nil {
 				return err
 			}
@@ -1752,9 +1769,11 @@ func (s *session) sendPackets() error {
 
 			if s.handshakeComplete && !s.sentPacketHandler.HasPacingBudget() {
 				s.pacingDeadline = s.sentPacketHandler.TimeUntilSend()
+
+				s.logger.Infof("Pacing deadline ", s.pacingDeadline)
 				return nil
 			}
-			sent, err := s.sendPacket()
+			sent, err := s.sendPacket(multi)
 			if err != nil || !sent {
 				return err
 			}
@@ -1818,9 +1837,10 @@ func (s *session) sendProbePacket(encLevel protocol.EncryptionLevel) error {
 	return nil
 }
 
-func (s *session) sendPacket() (bool, error) {
+func (s *session) sendPacket(multi bool) (bool, error) {
 	if isBlocked, offset := s.connFlowController.IsNewlyBlocked(); isBlocked {
 		s.framer.QueueControlFrame(&wire.DataBlockedFrame{MaximumData: offset})
+		s.logger.Infof("Is blocked ", multi, offset)
 	}
 	s.windowUpdateQueue.QueueAll()
 
@@ -1842,7 +1862,7 @@ func (s *session) sendPacket() (bool, error) {
 		return true, nil
 	}
 
-	packet, err := s.packer.PackPacket(s.multi)
+	packet, err := s.packer.PackPacket(multi)
 	if err != nil || packet == nil {
 		return false, err
 	}
@@ -1857,7 +1877,10 @@ func (s *session) sendPackedPacket(packet *packedPacket) {
 	}
 	s.sentPacketHandler.SentPacket(packet.ToAckHandlerPacket(time.Now(), s.retransmissionQueue))
 	s.connIDManager.SentPacket()
-	s.logPacket(now, packet)
+
+	if !packet.buffer.Multi {
+		s.logPacket(now, packet)
+	}
 	s.sendQueue.Send(packet.buffer)
 }
 
@@ -1925,7 +1948,7 @@ func (s *session) logCoalescedPacket(now time.Time, packet *coalescedPacket) {
 
 func (s *session) logPacket(now time.Time, packet *packedPacket) {
 	if s.logger.Debug() {
-		s.logger.Debugf("-> Sending packet %d (%d bytes) for connection %s, %s", packet.header.PacketNumber, packet.buffer.Len(), s.logID, packet.EncryptionLevel())
+		s.logger.Infof("-> Sending packet %d (%d bytes) for connection %s, %s", packet.header.PacketNumber, packet.buffer.Len(), s.logID, packet.EncryptionLevel())
 	}
 	s.logPacketContents(now, packet.packetContents)
 }
@@ -1989,6 +2012,14 @@ func (s *session) scheduleSending() {
 	}
 }
 
+// scheduleSending signals that we have data for sending
+func (s *session) scheduleRetransfer() {
+	select {
+	case s.sendingRetransfer <- struct{}{}:
+	default:
+	}
+}
+
 func (s *session) tryQueueingUndecryptablePacket(p *receivedPacket, hdr *wire.Header) {
 	if len(s.undecryptablePackets)+1 > protocol.MaxUndecryptablePackets {
 		if s.tracer != nil {
@@ -2029,6 +2060,11 @@ func (s *session) onHasConnectionWindowUpdate() {
 func (s *session) onHasStreamData(id protocol.StreamID) {
 	s.framer.AddActiveStream(id)
 	s.scheduleSending()
+}
+
+func (s *session) onHasStreamReData(id protocol.StreamID) {
+	s.framer.AddActiveStream(id)
+	s.scheduleRetransfer()
 }
 
 func (s *session) onStreamCompleted(id protocol.StreamID) {

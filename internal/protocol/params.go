@@ -157,7 +157,7 @@ const AckDelayExponent = 3
 const TimerGranularity = time.Millisecond
 
 // MaxAckDelay is the maximum time by which we delay sending ACKs.
-const MaxAckDelay = 25 * time.Millisecond
+const MaxAckDelay = 2 * time.Millisecond
 
 // MaxAckDelayInclGranularity is the max_ack_delay including the timer granularity.
 // This is the value that should be advertised to the peer.

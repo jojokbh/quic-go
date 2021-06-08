@@ -15,6 +15,7 @@ import (
 type streamSender interface {
 	queueControlFrame(wire.Frame)
 	onHasStreamData(protocol.StreamID)
+	onHasStreamReData(protocol.StreamID)
 	// must be called without holding the mutex that is acquired by closeForShutdown
 	onStreamCompleted(protocol.StreamID)
 }

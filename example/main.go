@@ -210,6 +210,7 @@ func main() {
 	bs := binds{}
 	flag.Var(&bs, "bind", "bind to")
 	www := flag.String("www", "/home/jones/Videos", "www data")
+	multi := flag.String("m", "224.42.42.1:1235", "multicast address")
 	tcp := flag.Bool("tcp", false, "also listen on TCP")
 	trace := flag.Bool("trace", false, "enable quic-trace")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
@@ -269,9 +270,8 @@ func main() {
 				//err = http3.ListenAndServe(bCap, certFile, keyFile, nil)
 			} else {
 				server := http3.Server{
-					UniCast: &http.Server{Handler: handler, Addr: bCap},
-					//MultiCast: &http.Server{Handler: multicastHandler, Addr: "224.42.42.1:1235"},
-					MultiCast:  &http.Server{Handler: multicastHandler, Addr: "127.0.0.1:1240"},
+					UniCast:    &http.Server{Handler: handler, Addr: bCap},
+					MultiCast:  &http.Server{Handler: multicastHandler, Addr: *multi},
 					QuicConfig: quicConf,
 				}
 				println("ListenMulti")

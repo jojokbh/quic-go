@@ -28,14 +28,6 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-const (
-	srvAddr         = "224.42.42.1:1236"
-	maxDatagramSize = 8192
-	hostString      = "localhost"
-	//hostString = "192.168.42.42"
-	//hostString = "ottb-ses.redirectme.net"
-)
-
 /*
 Client commands with rely
 ./rely add udp --application-out 224.42.42.1:1236 --tunnel-in 127.0.0.1:9090
@@ -46,16 +38,21 @@ func main() {
 	verbose := flag.Bool("v", false, "verbose")
 	quiet := flag.Bool("q", true, "don't print the data")
 	keyLogFile := flag.String("keylog", "", "key log file")
+	hostString := flag.String("h", "127.0.0.1:8081", "host string")
+	flagMulti := flag.String("m", "224.42.42.1:1235", "multicast addr")
 	//insecure := flag.Bool("insecure", true, "skip certificate verification")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
 	flag.Parse()
-	//urls := [1]string{"https://" + hostString + ":8081/demo/text"}
-	//urls := [1]string{"https://" + hostString + ":8081/index.m3u8"}
-	//urls := [2]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts"}
-	//urls := [3]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts"}
-	urls := [8]string{"https://" + hostString + ":8081/index.m3u8", "https://" + hostString + ":8081/index0.ts", "https://" + hostString + ":8081/index1.ts", "https://" + hostString + ":8081/index2.ts", "https://" + hostString + ":8081/index3.ts", "https://" + hostString + ":8081/index4.ts", "https://" + hostString + ":8081/index5.ts", "https://" + hostString + ":8081/index6.ts"}
-	//urls := [2]string{"https://localhost:8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
-	//urls := [4]string{"https://"+hostString+":8081/demo/tile", "https://224.42.42.1:1235/demo/tile"}
+
+	srvAddr := *flagMulti
+	//urls := [1]string{"https://" + *hostString + "/demo/text"}
+	//urls := [1]string{"https://" + *hostString + "/index.m3u8"}
+	//urls := [2]string{"https://" + *hostString + "/index.m3u8", "https://" + *hostString + "/index0.ts"}
+	//urls := [3]string{"https://" + *hostString + "/index.m3u8", "https://" + *hostString + "/index0.ts", "https://" + *hostString + "/index1.ts"}
+	//urls := [8]string{"http://" + *hostString + "/index.m3u8", "http://" + *hostString + "/index0.ts", "http://" + *hostString + "/index1.ts", "http://" + *hostString + "/index2.ts", "http://" + *hostString + "/index3.ts", "http://" + *hostString + "/index4.ts", "http://" + *hostString + "/index5.ts", "http://" + *hostString + "/index6.ts"}
+	urls := [8]string{"https://" + *hostString + "/index.m3u8", "https://" + *hostString + "/index0.ts", "https://" + *hostString + "/index1.ts", "https://" + *hostString + "/index2.ts", "https://" + *hostString + "/index3.ts", "https://" + *hostString + "/index4.ts", "https://" + *hostString + "/index5.ts", "https://" + *hostString + "/index6.ts"}
+	//urls := [2]string{"https://localhost/demo/tile", "https://224.42.42.1:1235/demo/tile"}
+	//urls := [4]string{"https://"+*hostString+"/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 
 	logger := utils.DefaultLogger
 
@@ -219,7 +216,7 @@ func main() {
 
 	src = &PassThru{Reader: reader}
 	fmt.Println(src)
-
+	now := time.Now()
 	for _, addr := range urls {
 		logger.Infof("GET %s", addr)
 		req, _ := http.NewRequest("GET", addr, nil)
@@ -258,10 +255,11 @@ func main() {
 			logger.Infof("Request Body:")
 			logger.Infof("%s", out.Name)
 		}
-		time.Sleep(time.Second * 1)
+		//time.Sleep(time.Second * 1)
 		//	wg.Done()
 		//}(addr)
 	}
+	fmt.Println("total time ", time.Now().Sub(now))
 
 	select {}
 

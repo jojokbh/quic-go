@@ -292,7 +292,7 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 		}
 		h.rttStats.UpdateRTT(rcvTime.Sub(p.SendTime), ackDelay, rcvTime)
 		if h.logger.Debug() {
-			h.logger.Debugf("\tupdated RTT: %s (σ: %s)", h.rttStats.SmoothedRTT(), h.rttStats.MeanDeviation())
+			h.logger.Debugf("\tupdated RTT: %s (σ: %s) congestion: %v | bytes %v | packets %d", h.rttStats.SmoothedRTT(), h.rttStats.MeanDeviation(), h.congestion.GetCongestionWindow(), h.bytesInFlight, h.packetsInFlight())
 		}
 		h.congestion.MaybeExitSlowStart()
 		if h.tracer != nil {
@@ -485,6 +485,7 @@ func (h *sentPacketHandler) setLossDetectionTimer() {
 		if h.tracer != nil && h.alarm != oldAlarm {
 			h.tracer.SetLossTimer(logging.TimerTypeACK, encLevel, h.alarm)
 		}
+		h.logger.Infof("Set loss detection timer. ", lossTime)
 		return
 	}
 
@@ -506,8 +507,6 @@ func (h *sentPacketHandler) setLossDetectionTimer() {
 	}
 }
 
-var totalLost int = 0
-
 func (h *sentPacketHandler) detectAndRemoveLostPackets(now time.Time, encLevel protocol.EncryptionLevel) ([]*Packet, error) {
 	pnSpace := h.getPacketNumberSpace(encLevel)
 	pnSpace.lossTime = time.Time{}
@@ -528,12 +527,12 @@ func (h *sentPacketHandler) detectAndRemoveLostPackets(now time.Time, encLevel p
 		}
 
 		if packet.SendTime.Before(lostSendTime) {
-			lostPackets = append(lostPackets, packet)
+			//lostPackets = append(lostPackets, packet)
 			if h.tracer != nil {
 				h.tracer.LostPacket(packet.EncryptionLevel, packet.PacketNumber, logging.PacketLossTimeThreshold)
 			}
 		} else if pnSpace.largestAcked >= packet.PacketNumber+packetThreshold {
-			lostPackets = append(lostPackets, packet)
+			//lostPackets = append(lostPackets, packet)
 			if h.tracer != nil {
 				h.tracer.LostPacket(packet.EncryptionLevel, packet.PacketNumber, logging.PacketLossReorderingThreshold)
 			}
@@ -550,17 +549,13 @@ func (h *sentPacketHandler) detectAndRemoveLostPackets(now time.Time, encLevel p
 		return nil, err
 	}
 
-	if len(lostPackets) > 0 {
+	if h.logger.Debug() && len(lostPackets) > 0 {
 		pns := make([]protocol.PacketNumber, len(lostPackets))
-		for i, p := range lostPackets {
-			pns[i] = p.PacketNumber
-		}
-		totalLost = totalLost + len(lostPackets)
 		h.logger.Debugf("\tlost packets (%d): %d", len(pns), pns)
-		h.logger.Infof("\tlost packets (%d):(%d) : %d", len(pns), totalLost, pns)
 	}
 
 	for _, p := range lostPackets {
+		p.multi = false
 		h.queueFramesForRetransmission(p)
 		// the bytes in flight need to be reduced no matter if this packet will be retransmitted
 		if p.includedInBytesInFlight {
@@ -765,8 +760,12 @@ func (h *sentPacketHandler) QueueProbePacket(encLevel protocol.EncryptionLevel) 
 	return true
 }
 
+var totalLost int = 0
+
 func (h *sentPacketHandler) queueFramesForRetransmission(p *Packet) {
 	p.multi = false
+	totalLost++
+	//fmt.Println("Total lost ", totalLost)
 	for _, f := range p.Frames {
 		f.OnLost(f.Frame)
 	}

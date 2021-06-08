@@ -1,5 +1,7 @@
 package quic
 
+import "fmt"
+
 type sendQueue struct {
 	queue       chan *packetBuffer
 	closeCalled chan struct{} // runStopped when Close() is called
@@ -20,6 +22,8 @@ func newSendQueue(conn multiSendConn) *sendQueue {
 	}
 	return s
 }
+
+var totalMultiPackets int = 0
 
 func (h *sendQueue) Send(p *packetBuffer) {
 	select {
@@ -43,6 +47,7 @@ func (h *sendQueue) Run() error {
 		case p := <-h.queue:
 
 			if p.Multi && h.multi && !h.client {
+				totalMultiPackets++
 				if err := h.conn.WriteMulti(p.Data); err != nil {
 					return err
 				}
@@ -55,6 +60,10 @@ func (h *sendQueue) Run() error {
 			p.Release()
 		}
 	}
+}
+
+func (h *sendQueue) totalPackets() {
+	fmt.Println("Total ", totalMultiPackets)
 }
 
 func (h *sendQueue) Close() {
