@@ -310,6 +310,7 @@ func (h *sentPacketHandler) ReceivedAck(ack *wire.AckFrame, encLevel protocol.En
 		return err
 	}
 	for _, p := range lostPackets {
+		fmt.Println("Lost packets ", p)
 		h.congestion.OnPacketLost(p.PacketNumber, p.Length, priorInFlight)
 	}
 	for _, p := range ackedPackets {
@@ -485,7 +486,7 @@ func (h *sentPacketHandler) setLossDetectionTimer() {
 		if h.tracer != nil && h.alarm != oldAlarm {
 			h.tracer.SetLossTimer(logging.TimerTypeACK, encLevel, h.alarm)
 		}
-		h.logger.Infof("Set loss detection timer. ", lossTime)
+		//h.logger.Infof("Set loss detection timer. ", lossTime)
 		return
 	}
 

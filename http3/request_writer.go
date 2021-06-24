@@ -245,6 +245,139 @@ func (w *requestWriter) encodeHeaders(req *http.Request, addGzipHeader bool, tra
 	return nil
 }
 
+func getHeaders(req *http.Request, addGzipHeader bool, trailers string, contentLength int64) ([]qpack.HeaderField, error) {
+	host := req.Host
+	if host == "" {
+		host = req.URL.Host
+	}
+	host, err := httpguts.PunycodeHostPort(host)
+	if err != nil {
+		return nil, err
+	}
+
+	var path string
+	if req.Method != "CONNECT" {
+		path = req.URL.RequestURI()
+		if !validPseudoPath(path) {
+			orig := path
+			path = strings.TrimPrefix(path, req.URL.Scheme+"://"+host)
+			if !validPseudoPath(path) {
+				if req.URL.Opaque != "" {
+					return nil, fmt.Errorf("invalid request :path %q from URL.Opaque = %q", orig, req.URL.Opaque)
+				} else {
+					return nil, fmt.Errorf("invalid request :path %q", orig)
+				}
+			}
+		}
+	}
+
+	// Check for any invalid headers and return an error before we
+	// potentially pollute our hpack state. (We want to be able to
+	// continue to reuse the hpack encoder for future requests)
+	for k, vv := range req.Header {
+		if !httpguts.ValidHeaderFieldName(k) {
+			return nil, fmt.Errorf("invalid HTTP header name %q", k)
+		}
+		for _, v := range vv {
+			if !httpguts.ValidHeaderFieldValue(v) {
+				return nil, fmt.Errorf("invalid HTTP header value %q for header %q", v, k)
+			}
+		}
+	}
+
+	enumerateHeaders := func(f func(name, value string)) {
+		// 8.1.2.3 Request Pseudo-Header Fields
+		// The :path pseudo-header field includes the path and query parts of the
+		// target URI (the path-absolute production and optionally a '?' character
+		// followed by the query production (see Sections 3.3 and 3.4 of
+		// [RFC3986]).
+		f(":authority", host)
+		f(":method", req.Method)
+		if req.Method != "CONNECT" {
+			f(":path", path)
+			f(":scheme", req.URL.Scheme)
+		}
+		if trailers != "" {
+			f("trailer", trailers)
+		}
+
+		var didUA bool
+		for k, vv := range req.Header {
+			if strings.EqualFold(k, "host") || strings.EqualFold(k, "content-length") {
+				// Host is :authority, already sent.
+				// Content-Length is automatic, set below.
+				continue
+			} else if strings.EqualFold(k, "connection") || strings.EqualFold(k, "proxy-connection") ||
+				strings.EqualFold(k, "transfer-encoding") || strings.EqualFold(k, "upgrade") ||
+				strings.EqualFold(k, "keep-alive") {
+				// Per 8.1.2.2 Connection-Specific Header
+				// Fields, don't send connection-specific
+				// fields. We have already checked if any
+				// are error-worthy so just ignore the rest.
+				continue
+			} else if strings.EqualFold(k, "user-agent") {
+				// Match Go's http1 behavior: at most one
+				// User-Agent. If set to nil or empty string,
+				// then omit it. Otherwise if not mentioned,
+				// include the default (below).
+				didUA = true
+				if len(vv) < 1 {
+					continue
+				}
+				vv = vv[:1]
+				if vv[0] == "" {
+					continue
+				}
+
+			}
+
+			for _, v := range vv {
+				f(k, v)
+			}
+		}
+		if shouldSendReqContentLength(req.Method, contentLength) {
+			f("content-length", strconv.FormatInt(contentLength, 10))
+		}
+		if addGzipHeader {
+			f("accept-encoding", "gzip")
+		}
+		if !didUA {
+			f("user-agent", defaultUserAgent)
+		}
+	}
+
+	// Do a first pass over the headers counting bytes to ensure
+	// we don't exceed cc.peerMaxHeaderListSize. This is done as a
+	// separate pass before encoding the headers to prevent
+	// modifying the hpack state.
+	hlSize := uint64(0)
+	enumerateHeaders(func(name, value string) {
+		hf := hpack.HeaderField{Name: name, Value: value}
+		hlSize += uint64(hf.Size())
+	})
+
+	// TODO: check maximum header list size
+	// if hlSize > cc.peerMaxHeaderListSize {
+	// 	return errRequestHeaderListSize
+	// }
+
+	// trace := httptrace.ContextClientTrace(req.Context())
+	// traceHeaders := traceHasWroteHeaderField(trace)
+
+	// Header list size is ok. Write the headers.
+	header := []qpack.HeaderField{}
+	enumerateHeaders(func(name, value string) {
+		name = strings.ToLower(name)
+		header = append(header, qpack.HeaderField{Name: name, Value: value})
+		//w.encoder.WriteField(qpack.HeaderField{Name: name, Value: value})
+		// if traceHeaders {
+		// 	traceWroteHeaderField(trace, name, value)
+		// }
+	})
+
+	return header, nil
+}
+
 // authorityAddr returns a given authority (a host/IP, or host:port / ip:port)
 // and returns a host:port. The port 443 is added if needed.
 func authorityAddr(scheme string, authority string) (addr string) {

@@ -68,6 +68,20 @@ func (w *responseWriter) WriteHeader(status int) {
 	}
 }
 
+func (w *responseWriter) getHeader(status int) []qpack.HeaderField {
+
+	h := []qpack.HeaderField{}
+	h = append(h, qpack.HeaderField{Name: ":status", Value: strconv.Itoa(status)})
+
+	for k, v := range w.header {
+		for index := range v {
+			h = append(h, qpack.HeaderField{Name: strings.ToLower(k), Value: v[index]})
+		}
+	}
+
+	return h
+}
+
 func (w *responseWriter) Write(p []byte) (int, error) {
 	if !w.headerWritten {
 		w.WriteHeader(200)

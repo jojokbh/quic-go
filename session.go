@@ -692,13 +692,13 @@ runLoop:
 		case <-s.sendingRetransfer:
 			// We do all the interesting stuff after the switch statement, so
 			// nothing to see here.
-			fmt.Println("Set false")
+			//fmt.Println("Set false")
 			//multi = false
 		case p := <-s.receivedPackets:
 			// Only reset the timers if this packet was actually processed.
 			// This avoids modifying any state when handling undecryptable packets,
 			// which could be injected by an attacker.
-			now := time.Now()
+			//now := time.Now()
 			if p.buffer.Multi {
 				if wasProcessed := s.handlePacketMultiImpl(p); !wasProcessed {
 					continue
@@ -708,7 +708,7 @@ runLoop:
 					continue
 				}
 			}
-			s.logger.Infof("Time to process ", (time.Now().Sub(now)))
+			//s.logger.Infof("Time to process ", (time.Now().Sub(now)))
 
 			// Don't set timers and send packets if the packet made us close the session.
 			select {
@@ -728,7 +728,7 @@ runLoop:
 			if err := s.sentPacketHandler.OnLossDetectionTimeout(); err != nil {
 				s.closeLocal(err)
 			}
-			s.logger.Infof("Timeout ", timeout)
+			//s.logger.Infof("Timeout ", timeout)
 		}
 
 		if keepAliveTime := s.nextKeepAliveTime(); !keepAliveTime.IsZero() && !now.Before(keepAliveTime) {
@@ -754,7 +754,7 @@ runLoop:
 			s.closeLocal(err)
 		}
 
-		s.logger.Infof("Time to send ", (time.Now().Sub(now)))
+		//s.logger.Infof("Time to send ", (time.Now().Sub(now)))
 	}
 	if !s.client {
 		s.sendQueue.totalPackets()
@@ -1538,6 +1538,7 @@ func (s *session) handleHandshakeDoneFrame() error {
 }
 
 func (s *session) handleAckFrame(frame *wire.AckFrame, encLevel protocol.EncryptionLevel) error {
+
 	if err := s.sentPacketHandler.ReceivedAck(frame, encLevel, s.lastPacketReceivedTime); err != nil {
 		return err
 	}

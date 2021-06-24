@@ -389,6 +389,9 @@ func dialMultiContext(
 				r.buffer = buf
 
 				proccesedPacket, _, err := c.session.handleMultiPacket(r)
+
+				w.Write(proccesedPacket.data)
+
 				if err == nil {
 					go lostPacketsStats(proccesedPacket)
 				} else {
@@ -432,8 +435,8 @@ func lostPacketsStats(proccesedPacket unpackedPacket) {
 	}
 	lost = totalPackets - lost
 	lock.Unlock()
-	fmt.Println()
-	fmt.Printf("Total/Lost: %d / %d / %d", total, lost, totalPackets)
+	//fmt.Println()
+	//fmt.Printf("Total/Lost: %d / %d / %d", total, lost, totalPackets)
 }
 
 func simpleDecrypt(raw []byte) []byte {

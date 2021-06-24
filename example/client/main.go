@@ -36,9 +36,9 @@ Client commands with rely
 */
 func main() {
 	verbose := flag.Bool("v", false, "verbose")
-	quiet := flag.Bool("q", true, "don't print the data")
+	quiet := flag.Bool("q", false, "don't print the data")
 	keyLogFile := flag.String("keylog", "", "key log file")
-	hostString := flag.String("h", "127.0.0.1:8081", "host string")
+	hostString := flag.String("h", "localhost:8081", "host string")
 	flagMulti := flag.String("m", "224.42.42.1:1235", "multicast addr")
 	//insecure := flag.Bool("insecure", true, "skip certificate verification")
 	enableQlog := flag.Bool("qlog", false, "output a qlog (in the same directory)")
@@ -51,6 +51,7 @@ func main() {
 	//urls := [3]string{"https://" + *hostString + "/index.m3u8", "https://" + *hostString + "/index0.ts", "https://" + *hostString + "/index1.ts"}
 	//urls := [8]string{"http://" + *hostString + "/index.m3u8", "http://" + *hostString + "/index0.ts", "http://" + *hostString + "/index1.ts", "http://" + *hostString + "/index2.ts", "http://" + *hostString + "/index3.ts", "http://" + *hostString + "/index4.ts", "http://" + *hostString + "/index5.ts", "http://" + *hostString + "/index6.ts"}
 	urls := [8]string{"https://" + *hostString + "/index.m3u8", "https://" + *hostString + "/index0.ts", "https://" + *hostString + "/index1.ts", "https://" + *hostString + "/index2.ts", "https://" + *hostString + "/index3.ts", "https://" + *hostString + "/index4.ts", "https://" + *hostString + "/index5.ts", "https://" + *hostString + "/index6.ts"}
+	//urls := [23]string{"https://" + *hostString + "/i6.m3u8", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/init.mp4", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55977.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55978.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55979.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55980.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55981.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55982.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55983.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55984.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55985.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55986.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55987.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55988.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55989.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55990.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55991.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55992.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55993.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55994.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55996.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55997.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55998.m4s"}
 	//urls := [2]string{"https://localhost/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 	//urls := [4]string{"https://"+*hostString+"/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 
@@ -245,14 +246,14 @@ func main() {
 		defer out.Close()
 
 		//body := &bytes.Buffer{}
-		_, err = io.Copy(out, rsp.Body)
+		written, err := io.Copy(out, rsp.Body)
 		if err != nil {
 			log.Fatal(err)
 		}
 		if *quiet {
 			logger.Infof("Request Body: %d bytes", out.Name)
 		} else {
-			logger.Infof("Request Body:")
+			logger.Infof("Request Body: %d bytes", written)
 			logger.Infof("%s", out.Name)
 		}
 		//time.Sleep(time.Second * 1)

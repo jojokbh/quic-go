@@ -349,6 +349,11 @@ func (s *Server) handleMultiConn(sess quic.EarlySession) {
 			s.logger.Debugf("Accepting stream failed: %s", err)
 			return
 		}
+		s.Multistream, err = sess.OpenStream()
+		if err != nil {
+			fmt.Println("Multistream open error")
+			break
+		}
 		/*
 			go func() {
 				rerr := s.handleRequest(sess, strMulti, decoder, func() {
@@ -435,10 +440,21 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 	fmt.Println()
 	fmt.Println("multicast ", req.Header["Multicast"])
 
+	multiHeaderValue, multiHeader := req.Header["Multicast"]
+
+	for _, j := range multiHeaderValue {
+		if j == "true" {
+			multiHeader = true
+		} else {
+			multiHeader = false
+		}
+	}
+
 	//Decide when to retransmit on multicast or unicast segment
-	if _, ok := multiRequest[req.RequestURI]; !ok && (strings.Contains(req.RequestURI, ".ts") || strings.Contains(req.RequestURI, ".mp4")) {
+	if _, ok := multiRequest[req.RequestURI]; !ok && (strings.Contains(req.RequestURI, ".ts") || strings.Contains(req.RequestURI, ".mp4") && multiHeader) {
 		multiRequest[req.RequestURI] = int64(str.StreamID())
 		fmt.Println("Set multicast handler!! ", str.StreamID())
+
 		handler = s.MultiCast.Handler
 		sess.SetMulti(true)
 		sess.NewFile(req.RequestURI)
@@ -450,6 +466,7 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 				}
 			}
 		*/
+
 	} else if strings.Contains(req.RequestURI, ".m3u8") {
 		if sessions[req.RequestURI] == nil {
 			sessions[req.RequestURI] = []quic.Stream{}
@@ -478,6 +495,9 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 		}()
 
 		handler.ServeHTTP(responseWriter, req)
+
+		fmt.Println("HEADER TEST!")
+		fmt.Println(responseWriter.getHeader(200))
 		fmt.Println(responseWriter.Header())
 	}()
 
