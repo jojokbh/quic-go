@@ -73,6 +73,8 @@ func generatePRData(l int) []byte {
 
 var tracer quictrace.Tracer
 
+var enableMulticast *bool
+
 func init() {
 	tracer = quictrace.NewTracer()
 }
@@ -258,6 +260,12 @@ func main() {
 			return utils.NewBufferedWriteCloser(bufio.NewWriter(f), f)
 		})
 	}
+	files := make(chan string)
+
+	enableMulticast = new(bool)
+	SetMulti(true)
+
+	//go test(files)
 
 	var wg sync.WaitGroup
 	wg.Add(len(bs))
@@ -275,7 +283,7 @@ func main() {
 					QuicConfig: quicConf,
 				}
 				println("ListenMulti")
-				err = server.ListenAndServeTLSMulti(getCert(), ifat)
+				err = server.ListenAndServeTLSMultiFolder(getCert(), ifat, files, enableMulticast)
 				//err = server.ListenAndServeTLS(getCert())
 			}
 			if err != nil {
@@ -285,6 +293,30 @@ func main() {
 		}()
 	}
 	wg.Wait()
+}
+
+func SetMulti(b bool) {
+	*enableMulticast = b
+}
+
+func test(files chan string) {
+	var i int64
+	fmt.Println("test started")
+	for i = 0; i < 10; i++ {
+		fmt.Println("testing ", i)
+
+		if i%3 == 0 {
+			SetMulti(false)
+		} else {
+			SetMulti(true)
+		}
+		time.Sleep(time.Second * 2)
+		go send(files, "test "+strconv.FormatInt(i, 10))
+	}
+}
+
+func send(files chan string, msg string) {
+	files <- msg
 }
 
 const keyBits = 1024

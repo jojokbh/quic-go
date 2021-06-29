@@ -688,12 +688,12 @@ runLoop:
 		case <-s.sendingScheduled:
 			// We do all the interesting stuff after the switch statement, so
 			// nothing to see here.
-			//multi = true
+			multi = true
 		case <-s.sendingRetransfer:
 			// We do all the interesting stuff after the switch statement, so
 			// nothing to see here.
 			//fmt.Println("Set false")
-			//multi = false
+			multi = false
 		case p := <-s.receivedPackets:
 			// Only reset the timers if this packet was actually processed.
 			// This avoids modifying any state when handling undecryptable packets,
@@ -787,9 +787,10 @@ func (s *session) Context() context.Context {
 func (s *session) ConnectionState() ConnectionState {
 	return s.cryptoStreamHandler.ConnectionState()
 }
+
 func (s *session) SetMulti(b bool) {
 	if b != *s.multi {
-		s.multi = &b
+		*s.multi = b
 		s.sendQueue.multi = b
 	}
 }

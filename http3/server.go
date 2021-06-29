@@ -111,6 +111,47 @@ func (s *Server) ListenAndServeTLS(config *tls.Config) error {
 }
 
 // ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
+func (s *Server) ListenAndServeTLSMultiFolder(config *tls.Config, ifat *net.Interface, folder chan string, enableMulticast *bool) error {
+	/*
+		var err error
+		certs := make([]tls.Certificate, 1)
+		certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return err
+		}
+		// We currently only use the cert-related stuff from tls.Config,
+		// so we don't need to make a full copy.
+		config := &tls.Config{
+			Certificates: certs,
+		}
+	*/
+
+	go s.multiCast(enableMulticast, folder)
+
+	multiRequest = map[string]int64{}
+	sessions = map[string][]quic.Stream{}
+	s.MultiStreamID = 0
+	return s.serveImplMulti(config, ifat, nil, nil)
+}
+
+func (s *Server) multiCast(enableMulticast *bool, files chan string) {
+	s.logger.Infof("Started multicast: ")
+	//s.MultiCast.Addr, s.UniCast.Addr
+
+	for {
+		select {
+		case file := <-files:
+			if *enableMulticast {
+				fmt.Println("Received ")
+				fmt.Println(file)
+			}
+		default:
+		}
+
+	}
+}
+
+// ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
 func (s *Server) ListenAndServeTLSMulti(config *tls.Config, ifat *net.Interface) error {
 	/*
 		var err error
