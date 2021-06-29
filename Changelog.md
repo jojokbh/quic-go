@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.20.2 (2021-05-11)
+Updated tls
+
 ## v0.20.1 (2021-05-11)
 ListenAndServeTLSMultiFolder2
 

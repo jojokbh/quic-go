@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -139,10 +140,20 @@ func (s *Server) multiCast(enableMulticast *bool, files chan string) {
 	s.logger.Infof("Started multicast: ")
 	//s.MultiCast.Addr, s.UniCast.Addr
 
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tlsconf := &tls.Config{
+		RootCAs:            pool,
+		InsecureSkipVerify: true,
+	}
+
 	roundTripper := &RoundTripper{
 		Ifat:            s.ifat,
 		MultiAddr:       s.MultiCast.Addr,
-		TLSClientConfig: s.UniCast.TLSConfig,
+		TLSClientConfig: tlsconf,
 		QuicConfig:      s.QuicConfig,
 	}
 	defer roundTripper.Close()
