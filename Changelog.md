@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.20.1 (2021-05-11)
+ListenAndServeTLSMultiFolder2
+
 ## v0.20.0 (2021-05-11)
 ListenAndServeTLSMultiFolder
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"runtime"
@@ -138,12 +139,32 @@ func (s *Server) multiCast(enableMulticast *bool, files chan string) {
 	s.logger.Infof("Started multicast: ")
 	//s.MultiCast.Addr, s.UniCast.Addr
 
+	roundTripper := &RoundTripper{
+		Ifat:            s.ifat,
+		MultiAddr:       s.MultiCast.Addr,
+		TLSClientConfig: s.UniCast.TLSConfig,
+		QuicConfig:      s.QuicConfig,
+	}
+	defer roundTripper.Close()
+
+	hclient := &http.Client{
+		Transport: roundTripper,
+	}
+
 	for {
 		select {
 		case file := <-files:
 			if *enableMulticast {
-				fmt.Println("Received ")
-				fmt.Println(file)
+				url := "https://" + s.UniCast.Addr + "/" + file
+				fmt.Println("Sending ", url)
+
+				req, _ := http.NewRequest("GET", url, nil)
+				req.Header.Set("multicast", "true")
+				_, err := hclient.Do(req)
+				if err != nil {
+					log.Fatal(err)
+				}
+
 			}
 		default:
 		}
