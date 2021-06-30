@@ -166,6 +166,7 @@ func (u *packetUnpacker) unpackMultiPacket(
 	}
 	return extHdr, decrypted, nil
 }
+
 func (u *packetUnpacker) unpackShortHeaderPacket(
 	opener handshake.ShortHeaderOpener,
 	hdr *wire.Header,
@@ -183,7 +184,7 @@ func (u *packetUnpacker) unpackShortHeaderPacket(
 	extHdrLen := extHdr.ParsedLen()
 	decrypted, err := opener.Open(data[extHdrLen:extHdrLen], data[extHdrLen:], rcvTime, extHdr.PacketNumber, extHdr.KeyPhase, data[:extHdrLen])
 	if err != nil {
-		fmt.Println("ERROR 1rtt ")
+		fmt.Println("ERROR decrypting ", err)
 		/*
 			fmt.Println(data)
 			fmt.Println(data[extHdrLen:extHdrLen])

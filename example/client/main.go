@@ -46,11 +46,11 @@ func main() {
 
 	srvAddr := *flagMulti
 	//urls := [1]string{"https://" + *hostString + "/demo/text"}
-	//urls := [1]string{"https://" + *hostString + "/index.m3u8"}
+	urls := [1]string{"https://" + *hostString + "/i6.m3u8"}
 	//urls := [2]string{"https://" + *hostString + "/index.m3u8", "https://" + *hostString + "/index0.ts"}
 	//urls := [3]string{"https://" + *hostString + "/index.m3u8", "https://" + *hostString + "/index0.ts", "https://" + *hostString + "/index1.ts"}
 	//urls := [8]string{"http://" + *hostString + "/index.m3u8", "http://" + *hostString + "/index0.ts", "http://" + *hostString + "/index1.ts", "http://" + *hostString + "/index2.ts", "http://" + *hostString + "/index3.ts", "http://" + *hostString + "/index4.ts", "http://" + *hostString + "/index5.ts", "http://" + *hostString + "/index6.ts"}
-	urls := [8]string{"https://" + *hostString + "/index.m3u8", "https://" + *hostString + "/index0.ts", "https://" + *hostString + "/index1.ts", "https://" + *hostString + "/index2.ts", "https://" + *hostString + "/index3.ts", "https://" + *hostString + "/index4.ts", "https://" + *hostString + "/index5.ts", "https://" + *hostString + "/index6.ts"}
+	//urls := [8]string{"https://" + *hostString + "/index.m3u8", "https://" + *hostString + "/index0.ts", "https://" + *hostString + "/index1.ts", "https://" + *hostString + "/index2.ts", "https://" + *hostString + "/index3.ts", "https://" + *hostString + "/index4.ts", "https://" + *hostString + "/index5.ts", "https://" + *hostString + "/index6.ts"}
 	//urls := [23]string{"https://" + *hostString + "/i6.m3u8", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/init.mp4", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55977.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55978.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55979.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55980.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55981.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55982.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55983.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55984.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55985.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55986.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55987.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55988.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55989.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55990.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55991.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55992.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55993.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55994.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55996.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55997.m4s", "https://" + *hostString + "/v1EM+vqLVvLf8rlOzoRGfXQ/55998.m4s"}
 	//urls := [2]string{"https://localhost/demo/tile", "https://224.42.42.1:1235/demo/tile"}
 	//urls := [4]string{"https://"+*hostString+"/demo/tile", "https://224.42.42.1:1235/demo/tile"}
@@ -91,6 +91,7 @@ func main() {
 			return utils.NewBufferedWriteCloser(bufio.NewWriter(f), f)
 		})
 	}
+
 	tlsconf := &tls.Config{
 		RootCAs:            pool,
 		InsecureSkipVerify: true,
