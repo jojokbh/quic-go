@@ -263,9 +263,9 @@ func main() {
 	files := make(chan string)
 
 	enableMulticast = new(bool)
-	SetMulti(true)
+	*enableMulticast = true
 
-	//go test(files)
+	go test(files)
 
 	var wg sync.WaitGroup
 	wg.Add(len(bs))
@@ -301,17 +301,21 @@ func SetMulti(b bool) {
 
 func test(files chan string) {
 	var i int64
+
 	fmt.Println("test started")
-	for i = 0; i < 10; i++ {
-		fmt.Println("testing ", i)
+	hostString := "localhost:8081"
+	urls := [8]string{"https://" + hostString + "/index.m3u8", "https://" + hostString + "/index0.ts", "https://" + hostString + "/index1.ts", "https://" + hostString + "/index2.ts", "https://" + hostString + "/index3.ts", "https://" + hostString + "/index4.ts", "https://" + hostString + "/index5.ts", "https://" + hostString + "/index6.ts"}
+
+	for i = 0; i < int64(len(urls)); i++ {
+		fmt.Println("testing ", urls[i])
 
 		if i%3 == 0 {
-			SetMulti(false)
+			SetMulti(true)
 		} else {
 			SetMulti(true)
 		}
 		time.Sleep(time.Second * 2)
-		go send(files, "test "+strconv.FormatInt(i, 10))
+		go send(files, urls[i])
 	}
 }
 

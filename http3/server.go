@@ -156,6 +156,7 @@ func (s *Server) multiCast(enableMulticast *bool, files chan string) {
 		TLSClientConfig: tlsconf,
 		QuicConfig:      s.QuicConfig,
 	}
+	fmt.Println(roundTripper)
 	defer roundTripper.Close()
 
 	hclient := &http.Client{
@@ -166,20 +167,24 @@ func (s *Server) multiCast(enableMulticast *bool, files chan string) {
 		select {
 		case file := <-files:
 			if *enableMulticast {
-				url := "https://" + s.UniCast.Addr + "/" + file
-				fmt.Println("Sending ", url)
-
-				req, _ := http.NewRequest("GET", url, nil)
-				req.Header.Set("multicast", "true")
-				_, err := hclient.Do(req)
-				if err != nil {
-					log.Fatal(err)
-				}
-
+				//url := "https://" + s.UniCast.Addr + "/" + file
+				go getTest(file, hclient)
 			}
 		default:
 		}
 
+	}
+}
+
+func getTest(file string, hclient *http.Client) {
+	url := file
+	fmt.Println("Sending ", url)
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("multicast", "true")
+	_, err := hclient.Do(req)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
