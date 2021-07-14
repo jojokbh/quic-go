@@ -232,6 +232,8 @@ func (t packetType) String() string {
 		return "stateless_reset"
 	case logging.PacketType1RTT:
 		return "1RTT"
+	case logging.PacketTypeMulti:
+		return "1RTT Multi"
 	case logging.PacketTypeNotDetermined:
 		return ""
 	default:

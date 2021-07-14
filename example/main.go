@@ -284,7 +284,7 @@ func main() {
 				}
 				println("ListenMulti")
 				err = server.ListenAndServeTLSMultiFolder(getCert(), ifat, files, enableMulticast)
-				//err = server.ListenAndServeTLS(getCert())
+				//err = server.ListenAndServeTLSMulti(getCert(), ifat)
 			}
 			if err != nil {
 				fmt.Println(err)
@@ -314,8 +314,8 @@ func test(files chan string) {
 		} else {
 			SetMulti(true)
 		}
-		time.Sleep(time.Second * 2)
 		go send(files, urls[i])
+		time.Sleep(time.Second * 4)
 	}
 }
 

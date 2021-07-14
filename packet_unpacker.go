@@ -78,10 +78,25 @@ func (u *packetUnpacker) Unpack(hdr *wire.Header, rcvTime time.Time, data []byte
 			return nil, err
 		}
 	default:
-		if hdr.IsLongHeader {
-			return nil, fmt.Errorf("unknown packet type: %s", hdr.Type)
-		}
-		if multi {
+		/*
+			if hdr.IsLongHeader && !multi {
+				return nil, fmt.Errorf("unknown packet type: %s", hdr.Type)
+			}
+		*/
+		if !multi {
+
+			encLevel = protocol.Encryption1RTT
+			opener, err := u.cs.Get1RTTOpener()
+			if err != nil {
+				return nil, err
+			}
+			extHdr, decrypted, err = u.unpackShortHeaderPacket(opener, hdr, rcvTime, data)
+			if err != nil {
+				return nil, err
+			}
+
+		} else {
+
 			encLevel = protocol.EncryptionMulti
 			opener, err := u.cs.Get1RTTOpener()
 			if err != nil {
@@ -99,17 +114,6 @@ func (u *packetUnpacker) Unpack(hdr *wire.Header, rcvTime time.Time, data []byte
 			)
 			extHdrLen := extHdr.ParsedLen()
 			decrypted = data[extHdrLen:]
-
-		} else {
-			encLevel = protocol.Encryption1RTT
-			opener, err := u.cs.Get1RTTOpener()
-			if err != nil {
-				return nil, err
-			}
-			extHdr, decrypted, err = u.unpackShortHeaderPacket(opener, hdr, rcvTime, data)
-			if err != nil {
-				return nil, err
-			}
 		}
 	}
 

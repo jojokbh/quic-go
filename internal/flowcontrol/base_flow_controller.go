@@ -1,6 +1,7 @@
 package flowcontrol
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -37,6 +38,7 @@ func (c *baseFlowController) IsNewlyBlocked() (bool, protocol.ByteCount) {
 		return false, 0
 	}
 	c.lastBlockedAt = c.sendWindow
+	fmt.Println("Blocking ", c.sendWindowSize(), c.sendWindow, c.lastBlockedAt)
 	return true, c.sendWindow
 }
 

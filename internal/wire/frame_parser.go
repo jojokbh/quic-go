@@ -88,7 +88,7 @@ func (p *frameParser) parseFrame(r *bytes.Reader, typeByte byte, encLevel protoc
 		case 0x1e:
 			frame, err = parseHandshakeDoneFrame(r, p.version)
 		default:
-			err = errors.New("unknown frame type")
+			err = errors.New("unknown frame type " + string(typeByte))
 		}
 	}
 	if err != nil {

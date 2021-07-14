@@ -791,7 +791,7 @@ func (s *session) ConnectionState() ConnectionState {
 func (s *session) SetMulti(b bool) {
 	if b != *s.multi {
 		*s.multi = b
-		s.sendQueue.multi = b
+		*s.sendQueue.multi = b
 	}
 }
 
@@ -1000,6 +1000,7 @@ func (s *session) handlePacketMultiImpl(rp *receivedPacket) bool {
 		}
 
 		p.data = packetData
+		p.buffer.Multi = true
 		if wasProcessed := s.handleSinglePacket(p, hdr); wasProcessed {
 			processed = true
 		}
@@ -1018,6 +1019,10 @@ func (s *session) handlePacketMultiImplSimple(rp receivedPacket) (unpackedPacket
 	s.sentPacketHandler.ReceivedBytes(protocol.ByteCount(len(data)))
 
 	hdr, packetData, rest, err := wire.ParsePacket(data, s.srcConnIDLen)
+	if err != nil {
+		fmt.Println("Error #10 ", err)
+		return unpackedPacket{}, *hdr, err
+	}
 	hdr.DestConnectionID = lastConnID
 	if err != nil {
 		if s.tracer != nil {
@@ -1059,6 +1064,10 @@ func (s *session) handlePacketMultiImplSimple(rp receivedPacket) (unpackedPacket
 		fmt.Println(data)
 	}
 	packet, err := s.unpacker.Unpack(hdr, rp.rcvTime, rp.data, true)
+	if err != nil {
+		fmt.Println("Error #11 ", err)
+		return unpackedPacket{}, *hdr, err
+	}
 
 	return *packet, *hdr, nil
 }

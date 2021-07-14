@@ -126,13 +126,17 @@ func (s *Server) ListenAndServeTLSMultiFolder(config *tls.Config, ifat *net.Inte
 		config := &tls.Config{
 			Certificates: certs,
 		}
-	*/
 
-	go s.multiCast(enableMulticast, folder)
+		logger := utils.DefaultLogger
+
+		s.logger = logger
+		s.logger.SetLogLevel(utils.LogLevelDebug)
+	*/
 
 	multiRequest = map[string]int64{}
 	sessions = map[string][]quic.Stream{}
 	s.MultiStreamID = 0
+	go s.multiCast(enableMulticast, folder)
 	return s.serveImplMulti(config, ifat, nil, nil)
 }
 
@@ -156,6 +160,7 @@ func (s *Server) multiCast(enableMulticast *bool, files chan string) {
 		TLSClientConfig: tlsconf,
 		QuicConfig:      s.QuicConfig,
 	}
+
 	fmt.Println(roundTripper)
 	defer roundTripper.Close()
 
@@ -163,10 +168,12 @@ func (s *Server) multiCast(enableMulticast *bool, files chan string) {
 		Transport: roundTripper,
 	}
 
+	time.Sleep(time.Second * 2)
+
 	for {
 		select {
 		case file := <-files:
-			if *enableMulticast {
+			if *enableMulticast && !strings.Contains(file, "m3u8") {
 				//url := "https://" + s.UniCast.Addr + "/" + file
 				go getTest(file, hclient)
 			}
@@ -180,12 +187,61 @@ func getTest(file string, hclient *http.Client) {
 	url := file
 	fmt.Println("Sending ", url)
 
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("multicast", "true")
-	_, err := hclient.Do(req)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		fmt.Println("Error ", err)
+		return
+	}
+	req.Header.Set("Multicast", "true")
+	res, err := hclient.Do(req)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	pass := &PassThru{}
+	written, err := io.Copy(pass, res.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if res.StatusCode == 200 {
+		fmt.Println("Received ", url, written, res.Header["Content-Length"])
+	} else {
+		fmt.Println("Error code ", res.StatusCode)
+	}
+}
+
+type PassThru struct {
+	Reader io.Reader
+	Writer io.Writer
+	total  int64 // Total # of bytes transferred
+	done   bool  // Total # of bytes transferred
+	//File     *os.File
+	buf []byte // contents are the bytes buf[off : len(buf)]
+	off int    // read at &buf[off], write at &buf[len(buf)]
+}
+
+func (pt *PassThru) Write(p []byte) (int, error) {
+	var err error
+	pt.total += int64(len(p))
+	//fmt.Println("Read", p, "bytes for a total of", pt.total)
+
+	return len(p), err
+}
+
+func (pt *PassThru) Read(p []byte) (int, error) {
+	n, err := pt.Reader.Read(p)
+	if err == nil {
+		pt.total += int64(n)
+		fmt.Println("Read", n, "bytes for a total of", pt.total)
+	}
+
+	if int64(n) == pt.total {
+		//pt.Reader.CancelRead(0)
+		fmt.Println("Done pass")
+		pt.done = true
+	}
+	return n, err
 }
 
 // ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
@@ -529,7 +585,8 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 	}
 
 	//Decide when to retransmit on multicast or unicast segment
-	if _, ok := multiRequest[req.RequestURI]; !ok && (strings.Contains(req.RequestURI, ".ts") || strings.Contains(req.RequestURI, ".mp4") && multiHeader) {
+	//if _, ok := multiRequest[req.RequestURI]; !ok && multiHeader {
+	if _, ok := multiRequest[req.RequestURI]; !ok && multiHeader {
 		multiRequest[req.RequestURI] = int64(str.StreamID())
 		fmt.Println("Set multicast handler!! ", str.StreamID())
 

@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +20,6 @@ import (
 	"github.com/jojokbh/quic-go/internal/protocol"
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/logging"
-	"golang.org/x/net/ipv4"
 )
 
 type client struct {
@@ -155,27 +155,29 @@ func dialMultiAddrContext(
 
 	fmt.Printf("a %s m: %s \n", addr, multiAddr)
 
-	c, err := net.ListenPacket("udp4", multiAddr)
-	if err != nil {
-		println("Error #1 " + err.Error())
-	}
+	/*
+		c, err := net.ListenPacket("udp4", multiAddr)
+		if err != nil {
+			println("Error #1 " + err.Error())
+		}
 
-	defer c.Close()
+		defer c.Close()
 
-	mHost, _, err := net.SplitHostPort(multiAddr)
-	if err != nil {
-		println("Split host error " + err.Error())
-	}
+		mHost, _, err := net.SplitHostPort(multiAddr)
+		if err != nil {
+			println("Split host error " + err.Error())
+		}
 
-	group := net.ParseIP(mHost)
+		group := net.ParseIP(mHost)
 
-	p := ipv4.NewPacketConn(c)
-	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
-		// error handling
-		println("Error #2 " + err.Error())
-	} else {
-		println("Joined IGMP")
-	}
+		p := ipv4.NewPacketConn(c)
+		if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
+			// error handling
+			println("Error #2 " + err.Error())
+		} else {
+			println("Joined IGMP")
+		}
+	*/
 
 	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
 	if err != nil {
@@ -189,7 +191,7 @@ func dialMultiAddrContext(
 		return nil, err
 	}
 
-	return dialMultiContext(ctx, udpConn, multiConn, udpAddr, multiUdpAddr, addr, tlsConf, config, use0RTT, true)
+	return dialMultiContext(ctx, udpConn, multiConn, udpAddr, multiUdpAddr, ifat, addr, tlsConf, config, use0RTT, true)
 }
 
 func dialAddrContext(
@@ -299,6 +301,7 @@ func dialMultiContext(
 	mconn *net.UDPConn,
 	remoteAddr net.Addr,
 	multiAddr net.Addr,
+	ifat *net.Interface,
 	host string,
 	tlsConf *tls.Config,
 	config *Config,
@@ -327,8 +330,23 @@ func dialMultiContext(
 	if err != nil {
 		log.Fatal(err)
 	}
-	l, err := net.ListenMulticastUDP("udp", nil, addr)
-	l.SetReadBuffer(protocol.MaxPacketSizeIPv4)
+	var l *net.UDPConn
+	if addr.IP.String() == "127.0.0.1" {
+		l, err = net.ListenUDP("udp", addr)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+
+		l, err = net.ListenMulticastUDP("udp", ifat, addr)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	err = l.SetReadBuffer(protocol.MaxPacketSizeIPv4)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	//Receive multicast data
 
@@ -359,9 +377,13 @@ func dialMultiContext(
 					name = string(b[9:n])
 					fmt.Println("new file name ", name)
 					process = true
+					if strings.Contains(name, "/") {
+						dir, _ := path.Split(name)
+						os.MkdirAll(dir, 0755)
+					}
 					w, err = os.Create(name)
 					if err != nil {
-
+						fmt.Println("Error creating file", err)
 					}
 
 				} else {
@@ -389,6 +411,8 @@ func dialMultiContext(
 				r.buffer = buf
 
 				proccesedPacket, _, err := c.session.handleMultiPacket(r)
+
+				//fmt.Println(wh)
 
 				w.Write(proccesedPacket.data)
 
