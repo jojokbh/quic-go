@@ -115,6 +115,7 @@ func (c *conn) Write(p []byte) error {
 func (c *conn) WriteMulti(p []byte) error {
 	//fmt.Println("Write Multi")
 	_, err := c.PacketConn.WriteTo(p, c.remoteAddr)
+	_, err = c.PacketConn.WriteTo(p, c.remoteAddr)
 	return err
 }
 
@@ -136,11 +137,6 @@ func (c *multiConn) WriteMulti(p []byte) error {
 	_, err := newMultiConn.Write(p)
 	if err != nil {
 		fmt.Println("newMulti ", err)
-	}
-	_, err = c.mConn.Write(p)
-	if err != nil {
-		println(" ERROR multi " + err.Error())
-		return err
 	}
 
 	return err

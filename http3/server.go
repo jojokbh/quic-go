@@ -592,7 +592,12 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 
 		handler = s.MultiCast.Handler
 		sess.SetMulti(true)
-		sess.NewFile(req.RequestURI)
+		go func() {
+			time.Sleep(time.Millisecond * 100)
+			contentLength := responseWriter.header.Values("Content-Length")
+			fmt.Println(contentLength)
+			sess.NewFile(req.RequestURI + " c: " + contentLength[0])
+		}()
 		/*
 			for s, r := range sessions {
 				for _, q := range r {

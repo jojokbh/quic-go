@@ -374,8 +374,12 @@ func dialMultiContext(
 			if n > 0 {
 
 				if bytes.Compare(b[:8], []byte{'n', 'e', 'w', 'f', 'i', 'l', 'e', ':'}) == 0 {
-					name = string(b[9:n])
-					fmt.Println("new file name ", name)
+
+					data := string(b[9:n])
+					datas := strings.Split(data, " c: ")
+					name = datas[0]
+					lenght := datas[1]
+					fmt.Println("new file name ", name, " lenght ", lenght)
 					process = true
 					if strings.Contains(name, "/") {
 						dir, _ := path.Split(name)
@@ -442,7 +446,7 @@ func lostPacketsStats(proccesedPacket unpackedPacket) {
 
 	lock.Lock()
 	if _, ok := packets[packetNumber]; ok {
-		fmt.Println("duplicate packet number ", packetNumber)
+		//fmt.Println("duplicate packet number ", packetNumber)
 	}
 	packets[packetNumber] = true
 

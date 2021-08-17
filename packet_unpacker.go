@@ -189,6 +189,7 @@ func (u *packetUnpacker) unpackShortHeaderPacket(
 	decrypted, err := opener.Open(data[extHdrLen:extHdrLen], data[extHdrLen:], rcvTime, extHdr.PacketNumber, extHdr.KeyPhase, data[:extHdrLen])
 	if err != nil {
 		fmt.Println("ERROR decrypting ", err)
+
 		/*
 			fmt.Println(data)
 			fmt.Println(data[extHdrLen:extHdrLen])
