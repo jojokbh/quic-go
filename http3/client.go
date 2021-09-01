@@ -192,6 +192,11 @@ func (c *client) maxHeaderBytes() uint64 {
 
 // RoundTrip executes a request and returns a response
 func (c *client) RoundTrip(req *http.Request) (*http.Response, error) {
+
+	if req.Header.Get("Multicast") == "true" {
+		//return c.RoundTripMulti(req)
+	}
+
 	if req.URL.Scheme != "https" {
 		return nil, errors.New("http3: unsupported scheme")
 	}
@@ -307,8 +312,8 @@ func (c *client) RoundTripMulti(req *http.Request) (*http.Response, error) {
 	go func() {
 		select {
 		case <-req.Context().Done():
-			str.CancelWrite(quic.ErrorCode(errorRequestCanceled))
-			str.CancelRead(quic.ErrorCode(errorRequestCanceled))
+			//str.CancelWrite(quic.ErrorCode(errorRequestCanceled))
+			//str.CancelRead(quic.ErrorCode(errorRequestCanceled))
 		case <-reqDone:
 		}
 	}()
@@ -336,6 +341,10 @@ func (c *client) doRequest(
 	reqDone chan struct{},
 ) (*http.Response, requestError) {
 	var requestGzip bool
+
+	if req.Header.Get("multicast") == "true" {
+		return c.doMultiRequest(req, str, reqDone)
+	}
 
 	if !c.opts.DisableCompression && req.Method != "HEAD" && req.Header.Get("Accept-Encoding") == "" && req.Header.Get("Range") == "" {
 		requestGzip = true

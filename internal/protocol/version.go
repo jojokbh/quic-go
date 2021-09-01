@@ -21,6 +21,7 @@ const (
 	VersionTLS      VersionNumber = 0x51474fff
 	VersionWhatever VersionNumber = 1 // for when the version doesn't matter
 	VersionUnknown  VersionNumber = math.MaxUint32
+	Version1        VersionNumber = 0x1
 )
 
 // SupportedVersions lists the versions that the server supports

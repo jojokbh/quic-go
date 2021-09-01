@@ -1,6 +1,7 @@
 package ackhandler
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/jojokbh/quic-go/internal/protocol"
@@ -48,11 +49,11 @@ func newReceivedPacketTracker(
 }
 
 func (h *receivedPacketTracker) ReceivedPacket(packetNumber protocol.PacketNumber, rcvTime time.Time, shouldInstigateAck bool) {
-	if packetNumber < h.ignoreBelow && false {
+	if packetNumber < h.ignoreBelow && true {
 		print("Ignore packet ")
 		println(packetNumber)
 
-		return
+		//return
 	}
 
 	isMissing := h.isMissing(packetNumber)
@@ -65,8 +66,7 @@ func (h *receivedPacketTracker) ReceivedPacket(packetNumber protocol.PacketNumbe
 		h.hasNewAck = true
 	}
 	if shouldInstigateAck {
-		//print(" ")
-		//print(packetNumber)
+
 		h.maybeQueueAck(packetNumber, rcvTime, isMissing)
 	}
 }
@@ -121,6 +121,7 @@ func (h *receivedPacketTracker) maybeQueueAck(pn protocol.PacketNumber, rcvTime 
 	// Ack decimation with reordering relies on the timer to send an ACK, but if
 	// missing packets we reported in the previous ack, send an ACK immediately.
 	if wasMissing {
+		fmt.Println("Was missing ", pn)
 		if h.logger.Debug() {
 			h.logger.Debugf("\tQueueing ACK because packet %d was missing before.", pn)
 		}

@@ -1,6 +1,7 @@
 package quic
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -119,6 +120,7 @@ func newStream(streamID protocol.StreamID,
 			s.completedMutex.Unlock()
 		},
 	}
+	fmt.Println("New stream ", streamID)
 	s.receiveStream = *newReceiveStream(streamID, senderForReceiveStream, flowController, version)
 	return s
 }

@@ -54,6 +54,7 @@ func newSendConn(c net.PacketConn, remote net.Addr) sendConn {
 
 func newSendMultiConn(c net.PacketConn, mConn *net.UDPConn, remote net.Addr, multi net.Addr) multiSendConn {
 	println("New send multi conn")
+
 	c2, err := net.ListenPacket("udp4", "224.42.42.1:1235")
 	if err != nil {
 		println("Error #1 " + err.Error())
@@ -115,7 +116,6 @@ func (c *conn) Write(p []byte) error {
 func (c *conn) WriteMulti(p []byte) error {
 	//fmt.Println("Write Multi")
 	_, err := c.PacketConn.WriteTo(p, c.remoteAddr)
-	_, err = c.PacketConn.WriteTo(p, c.remoteAddr)
 	return err
 }
 
@@ -133,7 +133,7 @@ func (c *multiConn) Write(p []byte) error {
 func (c *multiConn) WriteMulti(p []byte) error {
 
 	//time.Sleep(time.Microsecond * 10)
-
+	//fmt.Println("Write Multi")
 	_, err := newMultiConn.Write(p)
 	if err != nil {
 		fmt.Println("newMulti ", err)

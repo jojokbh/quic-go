@@ -188,6 +188,7 @@ type Session interface {
 	SetMulti(bool)
 	//Send new file name
 	NewFile(string)
+	GetStr() Stream
 }
 
 // An EarlySession is a session that is handshaetking.

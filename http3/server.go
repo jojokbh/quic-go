@@ -169,13 +169,16 @@ func (s *Server) multiCast(enableMulticast *bool, files chan string) {
 	}
 
 	time.Sleep(time.Second * 2)
-
+	var wg sync.WaitGroup
+	wg.Add(1)
 	for {
 		select {
 		case file := <-files:
 			if *enableMulticast && !strings.Contains(file, "m3u8") {
 				//url := "https://" + s.UniCast.Addr + "/" + file
-				go getTest(file, hclient)
+				success := getTest(file, hclient)
+				fmt.Println(success)
+
 			}
 		default:
 		}
@@ -183,31 +186,35 @@ func (s *Server) multiCast(enableMulticast *bool, files chan string) {
 	}
 }
 
-func getTest(file string, hclient *http.Client) {
+func getTest(file string, hclient *http.Client) bool {
 	url := file
 	fmt.Println("Sending ", url)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		fmt.Println("Error ", err)
-		return
+		return false
 	}
 	req.Header.Set("Multicast", "true")
 	res, err := hclient.Do(req)
 	if err != nil {
 		log.Fatal(err)
+		return false
 	}
 
 	pass := &PassThru{}
 	written, err := io.Copy(pass, res.Body)
 	if err != nil {
 		log.Fatal(err)
+		return false
 	}
 
 	if res.StatusCode == 200 {
 		fmt.Println("Received ", url, written, res.Header["Content-Length"])
+		return true
 	} else {
 		fmt.Println("Error code ", res.StatusCode)
+		return false
 	}
 }
 
@@ -596,16 +603,23 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 			time.Sleep(time.Millisecond * 100)
 			contentLength := responseWriter.header.Values("Content-Length")
 			fmt.Println(contentLength)
-			sess.NewFile(req.RequestURI + " c: " + contentLength[0])
-		}()
-		/*
-			for s, r := range sessions {
-				for _, q := range r {
-					fmt.Println(s, " write to ", q.StreamID())
-					q.Write([]byte("is this received?"))
-				}
+			if len(contentLength) > 0 {
+
+				sess.NewFile(req.RequestURI + " c: " + contentLength[0])
+
+				/*
+					//Send header info for all
+					for s, r := range sessions {
+						for _, q := range r {
+							fmt.Println(s, " write to ", q.StreamID())
+							header := responseWriter.header.Clone()
+							fmt.Println(header)
+							header.Write(q)
+						}
+					}
+				*/
 			}
-		*/
+		}()
 
 	} else if strings.Contains(req.RequestURI, ".m3u8") {
 		if sessions[req.RequestURI] == nil {

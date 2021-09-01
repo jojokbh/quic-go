@@ -185,6 +185,8 @@ type session struct {
 	multi                 *bool
 	client                bool
 
+	str Stream
+
 	receivedRetry       bool
 	versionNegotiated   bool
 	receivedFirstPacket bool
@@ -325,6 +327,7 @@ var newSession = func(
 		tracer,
 		logger,
 	)
+
 	s.cryptoStreamHandler = cs
 	s.packer = newPacketPacker(
 		srcConnID,
@@ -447,6 +450,7 @@ var newClientSession = func(
 	)
 	s.clientHelloWritten = clientHelloWritten
 	s.cryptoStreamHandler = cs
+
 	s.cryptoStreamManager = newCryptoStreamManager(cs, initialStream, handshakeStream, newCryptoStream())
 	s.unpacker = newPacketUnpacker(cs, s.version)
 	s.packer = newPacketPacker(
@@ -793,6 +797,10 @@ func (s *session) SetMulti(b bool) {
 		*s.multi = b
 		*s.sendQueue.multi = b
 	}
+}
+
+func (s *session) GetStr() Stream {
+	return s.str
 }
 
 func (s *session) NewFile(b string) {
@@ -1319,6 +1327,9 @@ func (s *session) handleUnpackedPacket(
 		}
 		if ackhandler.IsFrameAckEliciting(frame) {
 			isAckEliciting = true
+		}
+		if packet.multi {
+			isAckEliciting = false
 		}
 		if s.traceCallback != nil || s.tracer != nil {
 			frames = append(frames, frame)
@@ -1979,7 +1990,9 @@ func (s *session) OpenStream() (Stream, error) {
 }
 
 func (s *session) OpenStreamSync(ctx context.Context) (Stream, error) {
-	return s.streamsMap.OpenStreamSync(ctx)
+	str, err := s.streamsMap.OpenStreamSync(ctx)
+	s.str = str
+	return str, err
 }
 
 func (s *session) OpenUniStream() (SendStream, error) {

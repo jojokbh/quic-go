@@ -89,6 +89,7 @@ func (s *receiveStream) Read(p []byte) (int, error) {
 }
 
 func (s *receiveStream) readImpl(p []byte) (bool /*stream completed */, int, error) {
+
 	if s.finRead {
 		return false, 0, io.EOF
 	}

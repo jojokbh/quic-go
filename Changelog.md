@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.20.5 (2021-05-11)
+Higher speed
+
 ## v0.20.4 (2021-05-11)
 Error handling
 

@@ -199,6 +199,8 @@ func setupHandler(www string, trace bool) http.Handler {
 	return &tracingHandler{handler: mux}
 }
 
+var bind *string
+
 func main() {
 	// defer profile.Start().Stop()
 	/*
@@ -209,8 +211,8 @@ func main() {
 	// runtime.SetBlockProfileRate(1)
 
 	verbose := flag.Bool("v", false, "verbose")
-	bs := binds{}
-	flag.Var(&bs, "bind", "bind to")
+
+	bind = flag.String("bind", "localhost:8081", "bind to")
 	www := flag.String("www", "/home/jones/Videos", "www data")
 	multi := flag.String("m", "224.42.42.1:1235", "multicast address")
 	tcp := flag.Bool("tcp", false, "also listen on TCP")
@@ -239,8 +241,8 @@ func main() {
 	}
 	logger.SetLogTimeFormat("")
 
-	if len(bs) == 0 {
-		bs = binds{"localhost:8081"}
+	if len(*bind) == 0 {
+		*bind = "localhost:8081"
 	}
 
 	handler := setupHandler(*www, *trace)
@@ -268,30 +270,29 @@ func main() {
 	go test(files)
 
 	var wg sync.WaitGroup
-	wg.Add(len(bs))
-	for _, b := range bs {
-		bCap := b
-		go func() {
-			var err error
-			if *tcp {
-				//certFile, keyFile := getCert()
-				//err = http3.ListenAndServe(bCap, certFile, keyFile, nil)
-			} else {
-				server := http3.Server{
-					UniCast:    &http.Server{Handler: handler, Addr: bCap},
-					MultiCast:  &http.Server{Handler: multicastHandler, Addr: *multi},
-					QuicConfig: quicConf,
-				}
-				println("ListenMulti")
-				//err = server.ListenAndServeTLSMultiFolder(getCert(), ifat, files, enableMulticast)
-				err = server.ListenAndServeTLSMulti(getCert(), ifat)
+	wg.Add(1)
+	bCap := *bind
+	go func() {
+		var err error
+		if *tcp {
+			//certFile, keyFile := getCert()
+			//err = http3.ListenAndServe(bCap, certFile, keyFile, nil)
+		} else {
+			server := http3.Server{
+				UniCast:    &http.Server{Handler: handler, Addr: bCap},
+				MultiCast:  &http.Server{Handler: multicastHandler, Addr: *multi},
+				QuicConfig: quicConf,
 			}
-			if err != nil {
-				fmt.Println(err)
-			}
-			wg.Done()
-		}()
-	}
+			println("ListenMulti")
+			err = server.ListenAndServeTLSMultiFolder(getCert(), ifat, files, enableMulticast)
+			//err = server.ListenAndServeTLSMulti(getCert(), ifat)
+		}
+		if err != nil {
+			fmt.Println(err)
+		}
+		wg.Done()
+	}()
+
 	wg.Wait()
 }
 
@@ -303,7 +304,7 @@ func test(files chan string) {
 	var i int64
 
 	fmt.Println("test started")
-	hostString := "localhost:8081"
+	hostString := *bind
 	urls := [8]string{"https://" + hostString + "/index.m3u8", "https://" + hostString + "/index0.ts", "https://" + hostString + "/index1.ts", "https://" + hostString + "/index2.ts", "https://" + hostString + "/index3.ts", "https://" + hostString + "/index4.ts", "https://" + hostString + "/index5.ts", "https://" + hostString + "/index6.ts"}
 
 	for i = 0; i < int64(len(urls)); i++ {
@@ -315,7 +316,7 @@ func test(files chan string) {
 			SetMulti(true)
 		}
 		go send(files, urls[i])
-		time.Sleep(time.Second * 4)
+		time.Sleep(time.Second * 8)
 	}
 }
 

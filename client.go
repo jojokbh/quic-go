@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +22,8 @@ import (
 	"github.com/jojokbh/quic-go/internal/protocol"
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/logging"
+	"github.com/jojokbh/quic-go/multicast"
+	"golang.org/x/net/ipv4"
 )
 
 type client struct {
@@ -155,29 +159,27 @@ func dialMultiAddrContext(
 
 	fmt.Printf("a %s m: %s \n", addr, multiAddr)
 
-	/*
-		c, err := net.ListenPacket("udp4", multiAddr)
-		if err != nil {
-			println("Error #1 " + err.Error())
-		}
+	c, err := net.ListenPacket("udp4", multiAddr)
+	if err != nil {
+		println("Error #1 " + err.Error())
+	}
 
-		defer c.Close()
+	defer c.Close()
 
-		mHost, _, err := net.SplitHostPort(multiAddr)
-		if err != nil {
-			println("Split host error " + err.Error())
-		}
+	mHost, _, err := net.SplitHostPort(multiAddr)
+	if err != nil {
+		println("Split host error " + err.Error())
+	}
 
-		group := net.ParseIP(mHost)
+	group := net.ParseIP(mHost)
 
-		p := ipv4.NewPacketConn(c)
-		if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
-			// error handling
-			println("Error #2 " + err.Error())
-		} else {
-			println("Joined IGMP")
-		}
-	*/
+	p := ipv4.NewPacketConn(c)
+	if err := p.JoinGroup(ifat, &net.UDPAddr{IP: group}); err != nil {
+		// error handling
+		println("Error #2 " + err.Error())
+	} else {
+		println("Joined IGMP")
+	}
 
 	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
 	if err != nil {
@@ -291,8 +293,18 @@ func dialContext(
 	return c.session, nil
 }
 
-var packets map[int64]bool
+type packetDetails struct {
+	Lowest        int64
+	Highest       int64
+	ContentLength int64
+	ActualLenght  int
+	All           map[int64]bool
+}
+
+var packets map[string]*packetDetails
+
 var highestPacket int64 = 0
+
 var totalPackets int = 0
 
 func dialMultiContext(
@@ -355,13 +367,16 @@ func dialMultiContext(
 	prevPacket := int64(0)
 	name := ""
 	if packets == nil {
-		packets = make(map[int64]bool)
+		packets = make(map[string]*packetDetails)
 	}
 
 	var w *os.File
+	body := &multicast.MultiBody{}
+
 	if false {
-		fmt.Println(w, counter, lost, prevPacket, packets)
+		fmt.Println(w, counter, lost, prevPacket, packets, body)
 	}
+
 	go func() {
 		for {
 			process := false
@@ -374,13 +389,33 @@ func dialMultiContext(
 			if n > 0 {
 
 				if bytes.Compare(b[:8], []byte{'n', 'e', 'w', 'f', 'i', 'l', 'e', ':'}) == 0 {
-
+					if packets[name] != nil {
+						low := packets[name].Lowest
+						high := packets[name].Highest
+						diff := high - low
+						missing := int64(len(packets[name].All)) - diff
+						fmt.Println("High  ", high, " low ", low, " lenght ", int64(len(packets[name].All)), " CL ", packets[name].ContentLength, " AL ", packets[name].ActualLenght)
+						fmt.Println("Missing from ", name, " ", missing)
+						if missing > 0 && missing < 50 {
+							for i := low; i < high; i++ {
+								if _, ok := packets[name].All[i]; ok {
+									//fmt.Println("duplicate packet number ", packetNumber)
+								} else {
+									fmt.Println(i)
+								}
+							}
+						}
+						fmt.Println("thats it")
+					}
 					data := string(b[9:n])
 					datas := strings.Split(data, " c: ")
 					name = datas[0]
 					lenght := datas[1]
-					fmt.Println("new file name ", name, " lenght ", lenght)
-					process = true
+					actualLenght, err := strconv.ParseInt(lenght, 10, 64)
+					if err != nil {
+						fmt.Println("Error converting lenght ", err)
+						return
+					}
 					if strings.Contains(name, "/") {
 						dir, _ := path.Split(name)
 						os.MkdirAll(dir, 0755)
@@ -389,6 +424,53 @@ func dialMultiContext(
 					if err != nil {
 						fmt.Println("Error creating file", err)
 					}
+
+					packets[name] = &packetDetails{
+						Lowest:        9999999,
+						Highest:       0,
+						ContentLength: actualLenght,
+						ActualLenght:  0,
+						All:           make(map[int64]bool),
+					}
+
+					fmt.Println("new file name ", name, " lenght ", lenght)
+					process = true
+
+					/*
+						str, err := c.session.GetOrOpenReceiveStream(0)
+						if err != nil {
+							fmt.Println("Error with stream ", err)
+							return
+						}
+						if false {
+							fmt.Println(str)
+						}
+					*/
+
+					req := &http.Request{Method: http.MethodGet, ContentLength: actualLenght}
+
+					/*
+						str, err := c.session.OpenStreamSync(req.Context())
+						if err != nil {
+							fmt.Println(err)
+							return
+						}
+
+					*/
+					req.Body = c.session.GetStr()
+
+					reqDone := make(chan struct{})
+					go func() {
+						select {
+						case <-req.Context().Done():
+							fmt.Println("Req ctx done ")
+						case <-reqDone:
+							fmt.Println("Req done ")
+						}
+					}()
+					body = multicast.NewResponseMultiBody(req.Body, reqDone, func() {
+						c.session.CloseWithError(500, "")
+					})
 
 				} else {
 					process = false
@@ -404,7 +486,7 @@ func dialMultiContext(
 			if process {
 				//if counter%10 == 0 {
 
-			} else {
+			} else if body != nil {
 				totalPackets++
 				r := &receivedPacket{}
 				buf := getPacketBuffer(true)
@@ -414,14 +496,34 @@ func dialMultiContext(
 				r.data = b[:n]
 				r.buffer = buf
 
-				proccesedPacket, _, err := c.session.handleMultiPacket(r)
+				proccesedPacket, wh, err := c.session.handleMultiPacket(r)
 
-				//fmt.Println(wh)
+				if false {
+					fmt.Printf("%+v\n", wh)
+				}
 
-				w.Write(proccesedPacket.data)
+				if _, ok := packets[name]; ok {
+					if packets[name].Lowest > int64(proccesedPacket.packetNumber) {
+						packets[name].Lowest = int64(proccesedPacket.packetNumber)
+					}
+					if packets[name].Highest < int64(proccesedPacket.packetNumber) {
+						packets[name].Highest = int64(proccesedPacket.packetNumber)
+					}
+					packets[name].All[int64(proccesedPacket.packetNumber)] = true
+					packets[name].ActualLenght += len(proccesedPacket.data)
+
+					w.Write(proccesedPacket.data)
+				}
+				/*
+					bodyLenght, err := body.Read(r.data)
+					if err != nil {
+						fmt.Println("Body read err", err)
+					}
+					fmt.Println("read ", bodyLenght, " ", n)
+				*/
 
 				if err == nil {
-					go lostPacketsStats(proccesedPacket)
+					//go lostPacketsStats(proccesedPacket)
 				} else {
 					fmt.Println("error in proccesing packet: ", err)
 				}
@@ -440,6 +542,7 @@ func dialMultiContext(
 
 var lock = sync.Mutex{}
 
+/*
 func lostPacketsStats(proccesedPacket unpackedPacket) {
 
 	packetNumber := int64(proccesedPacket.packetNumber)
@@ -466,6 +569,7 @@ func lostPacketsStats(proccesedPacket unpackedPacket) {
 	//fmt.Println()
 	//fmt.Printf("Total/Lost: %d / %d / %d", total, lost, totalPackets)
 }
+*/
 
 func simpleDecrypt(raw []byte) []byte {
 	key, _ := hex.DecodeString("6368616e676520746869732070617373")
