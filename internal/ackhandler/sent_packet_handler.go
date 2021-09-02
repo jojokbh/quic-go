@@ -48,6 +48,7 @@ type sentPacketHandler struct {
 	initialPackets   *packetNumberSpace
 	handshakePackets *packetNumberSpace
 	appDataPackets   *packetNumberSpace
+	multiDataPackets *packetNumberSpace
 
 	// Do we know that the peer completed address validation yet?
 	// Always true for the server.
@@ -112,6 +113,7 @@ func newSentPacketHandler(
 		initialPackets:                 newPacketNumberSpace(initialPacketNumber),
 		handshakePackets:               newPacketNumberSpace(0),
 		appDataPackets:                 newPacketNumberSpace(0),
+		multiDataPackets:               newPacketNumberSpace(0),
 		rttStats:                       rttStats,
 		congestion:                     congestion,
 		perspective:                    pers,
@@ -164,6 +166,19 @@ func (h *sentPacketHandler) dropPackets(encLevel protocol.EncryptionLevel) {
 				h.bytesInFlight -= p.Length
 			}
 			h.appDataPackets.history.Remove(p.PacketNumber)
+			return true, nil
+		})
+	case protocol.EncryptionMulti:
+		// TODO(#2067): invalidate sent data
+		h.multiDataPackets.history.Iterate(func(p *Packet) (bool, error) {
+			if p.EncryptionLevel != protocol.Encryption0RTT {
+				return false, nil
+			}
+			h.queueFramesForRetransmission(p)
+			if p.includedInBytesInFlight {
+				h.bytesInFlight -= p.Length
+			}
+			h.multiDataPackets.history.Remove(p.PacketNumber)
 			return true, nil
 		})
 	default:
@@ -223,8 +238,10 @@ func (h *sentPacketHandler) getPacketNumberSpace(encLevel protocol.EncryptionLev
 		return h.initialPackets
 	case protocol.EncryptionHandshake:
 		return h.handshakePackets
-	case protocol.Encryption0RTT, protocol.Encryption1RTT, protocol.EncryptionMulti:
+	case protocol.Encryption0RTT, protocol.Encryption1RTT:
 		return h.appDataPackets
+	case protocol.EncryptionMulti:
+		return h.multiDataPackets
 	default:
 		panic("invalid packet number space")
 	}

@@ -1071,10 +1071,16 @@ func (s *session) handlePacketMultiImplSimple(rp receivedPacket) (unpackedPacket
 	if len(rest) > 0 {
 		fmt.Println(data)
 	}
+
 	packet, err := s.unpacker.Unpack(hdr, rp.rcvTime, rp.data, true)
 	if err != nil {
 		fmt.Println("Error #11 ", err)
 		return unpackedPacket{}, *hdr, err
+	}
+
+	if err := s.handleUnpackedPacket(packet, rp.rcvTime, rp.Size()); err != nil {
+		s.closeLocal(err)
+		return *packet, *hdr, err
 	}
 
 	return *packet, *hdr, nil

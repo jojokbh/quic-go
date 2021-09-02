@@ -298,7 +298,8 @@ type packetDetails struct {
 	Highest       int64
 	ContentLength int64
 	ActualLenght  int
-	All           map[int64]bool
+	All           map[int64]unpackedPacket
+	File          *os.File
 }
 
 var packets map[string]*packetDetails
@@ -390,6 +391,7 @@ func dialMultiContext(
 
 				if bytes.Compare(b[:8], []byte{'n', 'e', 'w', 'f', 'i', 'l', 'e', ':'}) == 0 {
 					if packets[name] != nil {
+						go saveFile(name)
 						low := packets[name].Lowest
 						high := packets[name].Highest
 						diff := high - low
@@ -406,6 +408,7 @@ func dialMultiContext(
 							}
 						}
 						fmt.Println("thats it")
+
 					}
 					data := string(b[9:n])
 					datas := strings.Split(data, " c: ")
@@ -430,7 +433,8 @@ func dialMultiContext(
 						Highest:       0,
 						ContentLength: actualLenght,
 						ActualLenght:  0,
-						All:           make(map[int64]bool),
+						All:           make(map[int64]unpackedPacket),
+						File:          w,
 					}
 
 					fmt.Println("new file name ", name, " lenght ", lenght)
@@ -509,10 +513,9 @@ func dialMultiContext(
 					if packets[name].Highest < int64(proccesedPacket.packetNumber) {
 						packets[name].Highest = int64(proccesedPacket.packetNumber)
 					}
-					packets[name].All[int64(proccesedPacket.packetNumber)] = true
+					packets[name].All[int64(proccesedPacket.packetNumber)] = proccesedPacket
 					packets[name].ActualLenght += len(proccesedPacket.data)
 
-					w.Write(proccesedPacket.data)
 				}
 				/*
 					bodyLenght, err := body.Read(r.data)
@@ -541,6 +544,15 @@ func dialMultiContext(
 }
 
 var lock = sync.Mutex{}
+
+func saveFile(name string) {
+	p := packets[name]
+	fmt.Println("Save file ", name)
+	for _, v := range p.All {
+		p.File.Write(v.data)
+	}
+	fmt.Println("Done saving ", name)
+}
 
 /*
 func lostPacketsStats(proccesedPacket unpackedPacket) {
