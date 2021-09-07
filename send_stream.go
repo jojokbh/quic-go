@@ -346,7 +346,8 @@ func (s *sendStream) frameAcked(f wire.Frame) {
 	s.mutex.Lock()
 	s.numOutstandingFrames--
 	if s.numOutstandingFrames < 0 {
-		panic("numOutStandingFrames negative")
+		//TAG to fix
+		//panic("numOutStandingFrames negative")
 	}
 	newlyCompleted := s.isNewlyCompleted()
 	s.mutex.Unlock()
@@ -372,7 +373,8 @@ func (s *sendStream) queueRetransmission(f wire.Frame) {
 	s.retransmissionQueue = append(s.retransmissionQueue, sf)
 	s.numOutstandingFrames--
 	if s.numOutstandingFrames < 0 {
-		panic("numOutStandingFrames negative")
+		//TAG to fix
+		//panic("numOutStandingFrames negative")
 	}
 	s.mutex.Unlock()
 

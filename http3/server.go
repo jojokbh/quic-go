@@ -177,7 +177,9 @@ func (s *Server) multiCast(enableMulticast *bool, files chan string) {
 			if *enableMulticast && !strings.Contains(file, "m3u8") {
 				//url := "https://" + s.UniCast.Addr + "/" + file
 				success := getTest(file, hclient)
-				fmt.Println(success)
+				if false {
+					fmt.Println(success)
+				}
 
 			}
 		default:

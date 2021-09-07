@@ -155,7 +155,7 @@ func (h *sentPacketHandler) dropPackets(encLevel protocol.EncryptionLevel) {
 		h.initialPackets = nil
 	case protocol.EncryptionHandshake:
 		h.handshakePackets = nil
-	case protocol.Encryption0RTT:
+	case protocol.Encryption0RTT, protocol.EncryptionMulti:
 		// TODO(#2067): invalidate sent data
 		h.appDataPackets.history.Iterate(func(p *Packet) (bool, error) {
 			if p.EncryptionLevel != protocol.Encryption0RTT {
@@ -168,19 +168,21 @@ func (h *sentPacketHandler) dropPackets(encLevel protocol.EncryptionLevel) {
 			h.appDataPackets.history.Remove(p.PacketNumber)
 			return true, nil
 		})
-	case protocol.EncryptionMulti:
-		// TODO(#2067): invalidate sent data
-		h.multiDataPackets.history.Iterate(func(p *Packet) (bool, error) {
-			if p.EncryptionLevel != protocol.Encryption0RTT {
-				return false, nil
-			}
-			h.queueFramesForRetransmission(p)
-			if p.includedInBytesInFlight {
-				h.bytesInFlight -= p.Length
-			}
-			h.multiDataPackets.history.Remove(p.PacketNumber)
-			return true, nil
-		})
+		/*
+			case protocol.EncryptionMulti:
+				// TODO(#2067): invalidate sent data
+				h.multiDataPackets.history.Iterate(func(p *Packet) (bool, error) {
+					if p.EncryptionLevel != protocol.Encryption0RTT {
+						return false, nil
+					}
+					h.queueFramesForRetransmission(p)
+					if p.includedInBytesInFlight {
+						h.bytesInFlight -= p.Length
+					}
+					h.multiDataPackets.history.Remove(p.PacketNumber)
+					return true, nil
+				})
+		*/
 	default:
 		panic(fmt.Sprintf("Cannot drop keys for encryption level %s", encLevel))
 	}
@@ -241,7 +243,7 @@ func (h *sentPacketHandler) getPacketNumberSpace(encLevel protocol.EncryptionLev
 	case protocol.Encryption0RTT, protocol.Encryption1RTT:
 		return h.appDataPackets
 	case protocol.EncryptionMulti:
-		return h.multiDataPackets
+		return h.appDataPackets
 	default:
 		panic("invalid packet number space")
 	}

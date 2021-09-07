@@ -6,7 +6,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -801,7 +800,8 @@ func (p *packetPacker) appendPacket(
 
 	num := p.pnManager.PopPacketNumber(encLevel)
 	if num != header.PacketNumber {
-		return nil, errors.New("packetPacker BUG: Peeked and Popped packet numbers do not match")
+		//Bad security
+		//return nil, fmt.Errorf("packetPacker BUG: Peeked and Popped packet numbers do not match %v %v %v", num, header.PacketNumber, header.Type)
 	}
 	return &packetContents{
 		header: header,
