@@ -48,6 +48,7 @@ func (h *sendQueue) Run() error {
 
 			if p.Multi && *h.multi && !h.client {
 				totalMultiPackets++
+
 				if err := h.conn.WriteMulti(p.Data); err != nil {
 					return err
 				}

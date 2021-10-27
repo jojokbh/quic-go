@@ -246,7 +246,7 @@ func main() {
 	}
 
 	handler := setupHandler(*www, *trace)
-	multicastHandler := setupHandler(*www, *trace)
+	//multicastHandler := setupHandler(*www, *trace)
 	quicConf := &quic.Config{}
 	if *trace {
 		quicConf.QuicTracer = tracer
@@ -280,12 +280,12 @@ func main() {
 		} else {
 			server := http3.Server{
 				UniCast:    &http.Server{Handler: handler, Addr: bCap},
-				MultiCast:  &http.Server{Handler: multicastHandler, Addr: *multi},
+				MultiCast:  &http.Server{Handler: handler, Addr: *multi},
 				QuicConfig: quicConf,
 			}
 			println("ListenMulti")
-			//err = server.ListenAndServeTLSMultiFolder(getCert(), ifat, files, enableMulticast)
-			err = server.ListenAndServeTLSMulti(getCert(), ifat)
+			err = server.ListenAndServeTLSMultiFolder(getCert(), ifat, files, enableMulticast)
+			//err = server.ListenAndServeTLSMulti(getCert(), ifat)
 		}
 		if err != nil {
 			fmt.Println(err)

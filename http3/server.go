@@ -624,11 +624,13 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 		}()
 
 	} else if strings.Contains(req.RequestURI, ".m3u8") {
-		if sessions[req.RequestURI] == nil {
-			sessions[req.RequestURI] = []quic.Stream{}
-		}
-		sessions[req.RequestURI] = append(sessions[req.RequestURI], str)
-		sess.SetMulti(false)
+		/*
+			if sessions[req.RequestURI] == nil {
+				sessions[req.RequestURI] = []quic.Stream{}
+			}
+			sessions[req.RequestURI] = append(sessions[req.RequestURI], str)
+			sess.SetMulti(false)
+		*/
 	} else {
 		sess.SetMulti(false)
 	}

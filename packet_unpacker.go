@@ -190,15 +190,14 @@ func (u *packetUnpacker) unpackShortHeaderPacket(
 	if err != nil {
 		fmt.Println("ERROR decrypting ", err)
 
-		/*
-			fmt.Println(data)
-			fmt.Println(data[extHdrLen:extHdrLen])
-			fmt.Println(data[extHdrLen:])
-			fmt.Println(rcvTime)
-			fmt.Println(extHdr.PacketNumber)
-			fmt.Println(extHdr.KeyPhase)
-			fmt.Println(data[:extHdrLen])
-		*/
+		fmt.Println(data)
+		fmt.Println(data[extHdrLen:extHdrLen])
+		fmt.Println(data[extHdrLen:])
+		fmt.Println(rcvTime)
+		fmt.Println(extHdr.PacketNumber)
+		fmt.Println(extHdr.KeyPhase)
+		fmt.Println(data[:extHdrLen])
+
 		return nil, nil, err
 	}
 	if parseErr != nil {

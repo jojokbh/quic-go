@@ -377,6 +377,7 @@ func dialMultiContext(
 	if false {
 		fmt.Println(w, counter, lost, prevPacket, packets, body)
 	}
+	l.SetReadBuffer(protocol.MaxPacketSizeIPv4)
 
 	go func() {
 		for {
@@ -387,7 +388,7 @@ func dialMultiContext(
 				log.Fatal("ReadFromUDP failed:", err)
 			}
 
-			if n > 0 {
+			if n > 0 && c.session.ConnectionState().HandshakeComplete && c.createdPacketConn {
 
 				if bytes.Compare(b[:8], []byte{'n', 'e', 'w', 'f', 'i', 'l', 'e', ':'}) == 0 {
 					if packets[name] != nil {
@@ -479,56 +480,56 @@ func dialMultiContext(
 				} else {
 					process = false
 				}
-			}
 
-			//print received data
-			//if counter%10 == 0 {
-			//log.Println(" ", n, " mulicast read from ", src, "  on ")
-			//}
-
-			//False packet loss
-			if process {
+				//print received data
 				//if counter%10 == 0 {
+				//log.Println(" ", n, " mulicast read from ", src, "  on ")
+				//}
 
-			} else if body != nil {
-				totalPackets++
-				r := &receivedPacket{}
-				buf := getPacketBuffer(true)
-				r.remoteAddr = remoteAddr
-				r.rcvTime = time.Now()
-				//r.data = simpleDecrypt(b[:n])
-				r.data = b[:n]
-				r.buffer = buf
+				//False packet loss
+				if process {
+					//if counter%10 == 0 {
 
-				proccesedPacket, wh, err := c.session.handleMultiPacket(r)
+				} else if body != nil {
+					totalPackets++
+					r := &receivedPacket{}
+					buf := getPacketBuffer(true)
+					r.remoteAddr = remoteAddr
+					r.rcvTime = time.Now()
+					//r.data = simpleDecrypt(b[:n])
+					r.data = b[:n]
+					r.buffer = buf
 
-				if false {
-					fmt.Printf("%+v\n", wh)
-				}
+					proccesedPacket, wh, err := c.session.handleMultiPacket(r)
 
-				if _, ok := packets[name]; ok {
-					if packets[name].Lowest > int64(proccesedPacket.packetNumber) {
-						packets[name].Lowest = int64(proccesedPacket.packetNumber)
+					if false {
+						fmt.Printf("%+v\n", wh)
 					}
-					if packets[name].Highest < int64(proccesedPacket.packetNumber) {
-						packets[name].Highest = int64(proccesedPacket.packetNumber)
-					}
-					packets[name].All[int64(proccesedPacket.packetNumber)] = proccesedPacket
-					packets[name].ActualLenght += len(proccesedPacket.data)
 
-				}
-				/*
-					bodyLenght, err := body.Read(r.data)
-					if err != nil {
-						fmt.Println("Body read err", err)
-					}
-					fmt.Println("read ", bodyLenght, " ", n)
-				*/
+					if _, ok := packets[name]; ok {
+						if packets[name].Lowest > int64(proccesedPacket.packetNumber) {
+							packets[name].Lowest = int64(proccesedPacket.packetNumber)
+						}
+						if packets[name].Highest < int64(proccesedPacket.packetNumber) {
+							packets[name].Highest = int64(proccesedPacket.packetNumber)
+						}
+						packets[name].All[int64(proccesedPacket.packetNumber)] = proccesedPacket
+						packets[name].ActualLenght += len(proccesedPacket.data)
 
-				if err == nil {
-					//go lostPacketsStats(proccesedPacket)
-				} else {
-					fmt.Println("error in proccesing packet: ", err)
+					}
+					/*
+						bodyLenght, err := body.Read(r.data)
+						if err != nil {
+							fmt.Println("Body read err", err)
+						}
+						fmt.Println("read ", bodyLenght, " ", n)
+					*/
+
+					if err == nil {
+						//go lostPacketsStats(proccesedPacket)
+					} else {
+						fmt.Println("error in proccesing packet: ", err)
+					}
 				}
 			}
 		}
