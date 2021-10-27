@@ -2,13 +2,10 @@ package main
 
 import (
 	"bufio"
-	"crypto/md5"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"os"
@@ -73,35 +70,6 @@ func setupHandler(www string) http.Handler {
 			w.Write(generatePRData(int(num)))
 		})
 	}
-
-	// accept file uploads and return the MD5 of the uploaded file
-	// maximum accepted file size is 1 GB
-	mux.HandleFunc("/demo/upload", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			err := r.ParseMultipartForm(1 << 30) // 1 GB
-			if err == nil {
-				var file multipart.File
-				file, _, err = r.FormFile("uploadfile")
-				if err == nil {
-					var size int64
-					if sizeInterface, ok := file.(Size); ok {
-						size = sizeInterface.Size()
-						b := make([]byte, size)
-						file.Read(b)
-						md5 := md5.Sum(b)
-						fmt.Fprintf(w, "%x", md5)
-						return
-					}
-					err = errors.New("couldn't get uploaded file size")
-				}
-			}
-			utils.DefaultLogger.Infof("Error receiving upload: %#v", err)
-		}
-		io.WriteString(w, `<html><body><form action="/demo/upload" method="post" enctype="multipart/form-data">
-				<input type="file" name="uploadfile"><br>
-				<input type="submit">
-			</form></body></html>`)
-	})
 
 	return mux
 }
