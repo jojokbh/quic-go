@@ -3,15 +3,17 @@ package self_test
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"time"
 
-	quic "github.com/jojokbh/quic-go"
+	"github.com/jojokbh/quic-go"
 	"github.com/jojokbh/quic-go/integrationtests/tools/israce"
 	"github.com/jojokbh/quic-go/internal/protocol"
-	"github.com/jojokbh/quic-go/internal/qerr"
+	"github.com/jojokbh/quic-go/logging"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -44,6 +46,29 @@ func (c *tokenStore) Put(key string, token *quic.ClientToken) {
 func (c *tokenStore) Pop(key string) *quic.ClientToken {
 	c.gets <- key
 	return c.store.Pop(key)
+}
+
+type versionNegotiationTracer struct {
+	connTracer
+
+	loggedVersions                 bool
+	receivedVersionNegotiation     bool
+	chosen                         logging.VersionNumber
+	clientVersions, serverVersions []logging.VersionNumber
+}
+
+func (t *versionNegotiationTracer) NegotiatedVersion(chosen logging.VersionNumber, clientVersions, serverVersions []logging.VersionNumber) {
+	if t.loggedVersions {
+		Fail("only expected one call to NegotiatedVersions")
+	}
+	t.loggedVersions = true
+	t.chosen = chosen
+	t.clientVersions = clientVersions
+	t.serverVersions = serverVersions
+}
+
+func (t *versionNegotiationTracer) ReceivedVersionNegotiationPacket(*logging.Header, []logging.VersionNumber) {
+	t.receivedVersionNegotiation = true
 }
 
 var _ = Describe("Handshake tests", func() {
@@ -97,37 +122,61 @@ var _ = Describe("Handshake tests", func() {
 			})
 
 			It("when the server supports more versions than the client", func() {
+				expectedVersion := protocol.SupportedVersions[0]
 				// the server doesn't support the highest supported version, which is the first one the client will try
 				// but it supports a bunch of versions that the client doesn't speak
 				serverConfig.Versions = []protocol.VersionNumber{7, 8, protocol.SupportedVersions[0], 9}
+				serverTracer := &versionNegotiationTracer{}
+				serverConfig.Tracer = newTracer(func() logging.ConnectionTracer { return serverTracer })
 				runServer(getTLSConfig())
 				defer server.Close()
+				clientTracer := &versionNegotiationTracer{}
 				sess, err := quic.DialAddr(
 					fmt.Sprintf("localhost:%d", server.Addr().(*net.UDPAddr).Port),
 					getTLSClientConfig(),
-					nil,
+					getQuicConfig(&quic.Config{Tracer: newTracer(func() logging.ConnectionTracer { return clientTracer })}),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(sess.(versioner).GetVersion()).To(Equal(protocol.SupportedVersions[0]))
+				Expect(sess.(versioner).GetVersion()).To(Equal(expectedVersion))
 				Expect(sess.CloseWithError(0, "")).To(Succeed())
+				Expect(clientTracer.chosen).To(Equal(expectedVersion))
+				Expect(clientTracer.receivedVersionNegotiation).To(BeFalse())
+				Expect(clientTracer.clientVersions).To(Equal(protocol.SupportedVersions))
+				Expect(clientTracer.serverVersions).To(BeEmpty())
+				Expect(serverTracer.chosen).To(Equal(expectedVersion))
+				Expect(serverTracer.serverVersions).To(Equal(serverConfig.Versions))
+				Expect(serverTracer.clientVersions).To(BeEmpty())
 			})
 
 			It("when the client supports more versions than the server supports", func() {
+				expectedVersion := protocol.SupportedVersions[0]
 				// the server doesn't support the highest supported version, which is the first one the client will try
 				// but it supports a bunch of versions that the client doesn't speak
 				serverConfig.Versions = supportedVersions
+				serverTracer := &versionNegotiationTracer{}
+				serverConfig.Tracer = newTracer(func() logging.ConnectionTracer { return serverTracer })
 				runServer(getTLSConfig())
 				defer server.Close()
+				clientVersions := []protocol.VersionNumber{7, 8, 9, protocol.SupportedVersions[0], 10}
+				clientTracer := &versionNegotiationTracer{}
 				sess, err := quic.DialAddr(
 					fmt.Sprintf("localhost:%d", server.Addr().(*net.UDPAddr).Port),
 					getTLSClientConfig(),
 					getQuicConfig(&quic.Config{
-						Versions: []protocol.VersionNumber{7, 8, 9, protocol.SupportedVersions[0], 10},
+						Versions: clientVersions,
+						Tracer:   newTracer(func() logging.ConnectionTracer { return clientTracer }),
 					}),
 				)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(sess.(versioner).GetVersion()).To(Equal(protocol.SupportedVersions[0]))
 				Expect(sess.CloseWithError(0, "")).To(Succeed())
+				Expect(clientTracer.chosen).To(Equal(expectedVersion))
+				Expect(clientTracer.receivedVersionNegotiation).To(BeTrue())
+				Expect(clientTracer.clientVersions).To(Equal(clientVersions))
+				Expect(clientTracer.serverVersions).To(ContainElements(supportedVersions)) // may contain greased versions
+				Expect(serverTracer.chosen).To(Equal(expectedVersion))
+				Expect(serverTracer.serverVersions).To(Equal(serverConfig.Versions))
+				Expect(serverTracer.clientVersions).To(BeEmpty())
 			})
 		})
 	}
@@ -167,10 +216,10 @@ var _ = Describe("Handshake tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 				str, err := sess.AcceptStream(context.Background())
 				Expect(err).ToNot(HaveOccurred())
-				data, err := ioutil.ReadAll(str)
+				data, err := io.ReadAll(str)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(data).To(Equal(PRData))
-				Expect(sess.ConnectionState().CipherSuite).To(Equal(suiteID))
+				Expect(sess.ConnectionState().TLS.CipherSuite).To(Equal(suiteID))
 				Expect(sess.CloseWithError(0, "")).To(Succeed())
 			})
 		}
@@ -210,12 +259,20 @@ var _ = Describe("Handshake tests", func() {
 
 				It("errors if the server name doesn't match", func() {
 					runServer(getTLSConfig())
-					_, err := quic.DialAddr(
-						fmt.Sprintf("127.0.0.1:%d", server.Addr().(*net.UDPAddr).Port),
+					conn, err := net.ListenUDP("udp", nil)
+					Expect(err).ToNot(HaveOccurred())
+					_, err = quic.Dial(
+						conn,
+						server.Addr(),
+						"foo.bar",
 						getTLSClientConfig(),
 						clientConfig,
 					)
-					Expect(err).To(MatchError("CRYPTO_ERROR: x509: cannot validate certificate for 127.0.0.1 because it doesn't contain any IP SANs"))
+					Expect(err).To(HaveOccurred())
+					var transportErr *quic.TransportError
+					Expect(errors.As(err, &transportErr)).To(BeTrue())
+					Expect(transportErr.ErrorCode.IsCryptoError()).To(BeTrue())
+					Expect(transportErr.Error()).To(ContainSubstring("x509: certificate is valid for localhost, not foo.bar"))
 				})
 
 				It("fails the handshake if the client fails to provide the requested client cert", func() {
@@ -240,19 +297,27 @@ var _ = Describe("Handshake tests", func() {
 						}()
 						Eventually(errChan).Should(Receive(&err))
 					}
-					Expect(err).To(MatchError("CRYPTO_ERROR: tls: bad certificate"))
+					Expect(err).To(HaveOccurred())
+					var transportErr *quic.TransportError
+					Expect(errors.As(err, &transportErr)).To(BeTrue())
+					Expect(transportErr.ErrorCode.IsCryptoError()).To(BeTrue())
+					Expect(transportErr.Error()).To(ContainSubstring("tls: bad certificate"))
 				})
 
 				It("uses the ServerName in the tls.Config", func() {
 					runServer(getTLSConfig())
 					tlsConf := getTLSClientConfig()
-					tlsConf.ServerName = "localhost"
+					tlsConf.ServerName = "foo.bar"
 					_, err := quic.DialAddr(
-						fmt.Sprintf("127.0.0.1:%d", server.Addr().(*net.UDPAddr).Port),
+						fmt.Sprintf("localhost:%d", server.Addr().(*net.UDPAddr).Port),
 						tlsConf,
 						clientConfig,
 					)
-					Expect(err).ToNot(HaveOccurred())
+					Expect(err).To(HaveOccurred())
+					var transportErr *quic.TransportError
+					Expect(errors.As(err, &transportErr)).To(BeTrue())
+					Expect(transportErr.ErrorCode.IsCryptoError()).To(BeTrue())
+					Expect(transportErr.Error()).To(ContainSubstring("x509: certificate is valid for localhost, not foo.bar"))
 				})
 			})
 		}
@@ -311,7 +376,9 @@ var _ = Describe("Handshake tests", func() {
 
 			_, err := dial()
 			Expect(err).To(HaveOccurred())
-			Expect(err.(*qerr.QuicError).ErrorCode).To(Equal(qerr.ConnectionRefused))
+			var transportErr *quic.TransportError
+			Expect(errors.As(err, &transportErr)).To(BeTrue())
+			Expect(transportErr.ErrorCode).To(Equal(quic.ConnectionRefused))
 
 			// now accept one session, freeing one spot in the queue
 			_, err = server.Accept(context.Background())
@@ -324,7 +391,8 @@ var _ = Describe("Handshake tests", func() {
 
 			_, err = dial()
 			Expect(err).To(HaveOccurred())
-			Expect(err.(*qerr.QuicError).ErrorCode).To(Equal(qerr.ConnectionRefused))
+			Expect(errors.As(err, &transportErr)).To(BeTrue())
+			Expect(transportErr.ErrorCode).To(Equal(quic.ConnectionRefused))
 		})
 
 		It("removes closed connections from the accept queue", func() {
@@ -336,27 +404,30 @@ var _ = Describe("Handshake tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 				defer sess.CloseWithError(0, "")
 			}
-			time.Sleep(25 * time.Millisecond) // wait a bit for the sessions to be queued
+			time.Sleep(scaleDuration(20 * time.Millisecond)) // wait a bit for the sessions to be queued
 
 			_, err = dial()
 			Expect(err).To(HaveOccurred())
-			Expect(err.(*qerr.QuicError).ErrorCode).To(Equal(qerr.ConnectionRefused))
+			var transportErr *quic.TransportError
+			Expect(errors.As(err, &transportErr)).To(BeTrue())
+			Expect(transportErr.ErrorCode).To(Equal(quic.ConnectionRefused))
 
 			// Now close the one of the session that are waiting to be accepted.
 			// This should free one spot in the queue.
 			Expect(firstSess.CloseWithError(0, ""))
-			time.Sleep(25 * time.Millisecond)
+			Eventually(firstSess.Context().Done()).Should(BeClosed())
+			time.Sleep(scaleDuration(20 * time.Millisecond))
 
 			// dial again, and expect that this dial succeeds
 			_, err = dial()
 			Expect(err).ToNot(HaveOccurred())
-			time.Sleep(25 * time.Millisecond) // wait a bit for the session to be queued
+			time.Sleep(scaleDuration(20 * time.Millisecond)) // wait a bit for the session to be queued
 
 			_, err = dial()
 			Expect(err).To(HaveOccurred())
-			Expect(err.(*qerr.QuicError).ErrorCode).To(Equal(qerr.ConnectionRefused))
+			Expect(errors.As(err, &transportErr)).To(BeTrue())
+			Expect(transportErr.ErrorCode).To(Equal(quic.ConnectionRefused))
 		})
-
 	})
 
 	Context("ALPN", func() {
@@ -370,7 +441,7 @@ var _ = Describe("Handshake tests", func() {
 				sess, err := ln.Accept(context.Background())
 				Expect(err).ToNot(HaveOccurred())
 				cs := sess.ConnectionState()
-				Expect(cs.NegotiatedProtocol).To(Equal(alpn))
+				Expect(cs.TLS.NegotiatedProtocol).To(Equal(alpn))
 				close(done)
 			}()
 
@@ -382,7 +453,7 @@ var _ = Describe("Handshake tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer sess.CloseWithError(0, "")
 			cs := sess.ConnectionState()
-			Expect(cs.NegotiatedProtocol).To(Equal(alpn))
+			Expect(cs.TLS.NegotiatedProtocol).To(Equal(alpn))
 			Eventually(done).Should(BeClosed())
 			Expect(ln.Close()).To(Succeed())
 		})
@@ -398,8 +469,10 @@ var _ = Describe("Handshake tests", func() {
 				nil,
 			)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("CRYPTO_ERROR"))
-			Expect(err.Error()).To(ContainSubstring("no application protocol"))
+			var transportErr *quic.TransportError
+			Expect(errors.As(err, &transportErr)).To(BeTrue())
+			Expect(transportErr.ErrorCode.IsCryptoError()).To(BeTrue())
+			Expect(transportErr.Error()).To(ContainSubstring("no application protocol"))
 		})
 	})
 
@@ -477,7 +550,9 @@ var _ = Describe("Handshake tests", func() {
 				nil,
 			)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("INVALID_TOKEN"))
+			var transportErr *quic.TransportError
+			Expect(errors.As(err, &transportErr)).To(BeTrue())
+			Expect(transportErr.ErrorCode).To(Equal(quic.InvalidToken))
 			// Receiving a Retry might lead the client to measure a very small RTT.
 			// Then, it sometimes would retransmit the ClientHello before receiving the ServerHello.
 			Expect(len(tokenChan)).To(BeNumerically(">=", 2))

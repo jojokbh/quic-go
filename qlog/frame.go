@@ -57,6 +57,8 @@ func (f frame) MarshalJSONObject(enc *gojay.Encoder) {
 		marshalConnectionCloseFrame(enc, frame)
 	case *logging.HandshakeDoneFrame:
 		marshalHandshakeDoneFrame(enc, frame)
+	case *logging.DatagramFrame:
+		marshalDatagramFrame(enc, frame)
 	default:
 		panic("unknown frame type")
 	}
@@ -102,6 +104,11 @@ func marshalAckFrame(enc *gojay.Encoder, f *logging.AckFrame) {
 	enc.StringKey("frame_type", "ack")
 	enc.FloatKeyOmitEmpty("ack_delay", milliseconds(f.DelayTime))
 	enc.ArrayKey("acked_ranges", ackRanges(f.AckRanges))
+	if hasECN := f.ECT0 > 0 || f.ECT1 > 0 || f.ECNCE > 0; hasECN {
+		enc.Uint64Key("ect0", f.ECT0)
+		enc.Uint64Key("ect1", f.ECT1)
+		enc.Uint64Key("ce", f.ECNCE)
+	}
 }
 
 func marshalResetStreamFrame(enc *gojay.Encoder, f *logging.ResetStreamFrame) {
@@ -125,8 +132,7 @@ func marshalCryptoFrame(enc *gojay.Encoder, f *logging.CryptoFrame) {
 
 func marshalNewTokenFrame(enc *gojay.Encoder, f *logging.NewTokenFrame) {
 	enc.StringKey("frame_type", "new_token")
-	enc.IntKey("length", len(f.Token))
-	enc.StringKey("token", fmt.Sprintf("%x", f.Token))
+	enc.ObjectKey("token", &token{Raw: f.Token})
 }
 
 func marshalStreamFrame(enc *gojay.Encoder, f *logging.StreamFrame) {
@@ -205,12 +211,17 @@ func marshalConnectionCloseFrame(enc *gojay.Encoder, f *logging.ConnectionCloseF
 	if errName := transportError(f.ErrorCode).String(); len(errName) > 0 {
 		enc.StringKey("error_code", errName)
 	} else {
-		enc.Uint64Key("error_code", uint64(f.ErrorCode))
+		enc.Uint64Key("error_code", f.ErrorCode)
 	}
-	enc.Uint64Key("raw_error_code", uint64(f.ErrorCode))
+	enc.Uint64Key("raw_error_code", f.ErrorCode)
 	enc.StringKey("reason", f.ReasonPhrase)
 }
 
 func marshalHandshakeDoneFrame(enc *gojay.Encoder, _ *logging.HandshakeDoneFrame) {
 	enc.StringKey("frame_type", "handshake_done")
+}
+
+func marshalDatagramFrame(enc *gojay.Encoder, f *logging.DatagramFrame) {
+	enc.StringKey("frame_type", "datagram")
+	enc.Int64Key("length", int64(f.Length))
 }

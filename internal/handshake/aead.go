@@ -1,13 +1,12 @@
 package handshake
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
-	"fmt"
 
 	"github.com/jojokbh/quic-go/internal/protocol"
 	"github.com/jojokbh/quic-go/internal/qtls"
+	"github.com/jojokbh/quic-go/internal/utils"
 )
 
 func createAEAD(suite *qtls.CipherSuiteTLS13, trafficSecret []byte) cipher.AEAD {
@@ -26,28 +25,7 @@ type longHeaderSealer struct {
 
 var _ LongHeaderSealer = &longHeaderSealer{}
 
-var multiSealer *longHeaderSealer
-
 func newLongHeaderSealer(aead cipher.AEAD, headerProtector headerProtector) LongHeaderSealer {
-	if multiSealer == nil {
-		key := []byte("AES256Key-32Characters1234567890")
-
-		block, err := aes.NewCipher(key)
-		if err != nil {
-			panic(err.Error())
-		}
-
-		aesgcm, err := cipher.NewGCM(block)
-		if err != nil {
-			panic(err.Error())
-		}
-
-		multiSealer = &longHeaderSealer{
-			aead:            aesgcm,
-			headerProtector: headerProtector,
-			nonceBuf:        make([]byte, aead.NonceSize()),
-		}
-	}
 	return &longHeaderSealer{
 		aead:            aead,
 		headerProtector: headerProtector,
@@ -62,39 +40,18 @@ func (s *longHeaderSealer) Seal(dst, src []byte, pn protocol.PacketNumber, ad []
 	return s.aead.Seal(dst, s.nonceBuf, src, ad)
 }
 
-func (s *longHeaderSealer) MultiSeal(dst, src []byte, pn protocol.PacketNumber, ad []byte) []byte {
-	println("Longhead multiseal")
-	mNonce := s.nonceBuf[len(s.nonceBuf)-8:]
-
-	binary.BigEndian.PutUint64(mNonce, uint64(pn))
-	// The AEAD we're using here will be the qtls.aeadAESGCM13.
-	// It uses the nonce provided here and XOR it with the IV.
-	return multiSealer.aead.Seal(dst, multiSealer.nonceBuf, src, ad)
-}
-
 func (s *longHeaderSealer) EncryptHeader(sample []byte, firstByte *byte, pnBytes []byte) {
 	s.headerProtector.EncryptHeader(sample, firstByte, pnBytes)
-}
-
-func (s *longHeaderSealer) MultiEncryptHeader(sample []byte, firstByte *byte, pnBytes []byte) {
-	s.headerProtector.EncryptHeader(sample, firstByte, pnBytes)
-}
-
-func (o *longHeaderOpener) MultiDecryptHeader(sample []byte, firstByte *byte, pnBytes []byte) {
-	o.headerProtector.DecryptHeader(sample, firstByte, pnBytes)
 }
 
 func (s *longHeaderSealer) Overhead() int {
 	return s.aead.Overhead()
 }
 
-func (s *longHeaderSealer) MutliOverhead() int {
-	return multiSealer.aead.Overhead()
-}
-
 type longHeaderOpener struct {
 	aead            cipher.AEAD
 	headerProtector headerProtector
+	highestRcvdPN   protocol.PacketNumber // highest packet number received (which could be successfully unprotected)
 
 	// use a single slice to avoid allocations
 	nonceBuf []byte
@@ -102,29 +59,7 @@ type longHeaderOpener struct {
 
 var _ LongHeaderOpener = &longHeaderOpener{}
 
-var multiOpener *longHeaderOpener
-
 func newLongHeaderOpener(aead cipher.AEAD, headerProtector headerProtector) LongHeaderOpener {
-	if multiOpener == nil {
-		key := []byte("AES256Key-32Characters1234567890")
-
-		block, err := aes.NewCipher(key)
-		if err != nil {
-			panic(err.Error())
-		}
-
-		aesgcm, err := cipher.NewGCM(block)
-		if err != nil {
-			panic(err.Error())
-		}
-
-		multiOpener = &longHeaderOpener{
-			aead:            aesgcm,
-			headerProtector: headerProtector,
-			nonceBuf:        make([]byte, aead.NonceSize()),
-		}
-
-	}
 	return &longHeaderOpener{
 		aead:            aead,
 		headerProtector: headerProtector,
@@ -132,20 +67,19 @@ func newLongHeaderOpener(aead cipher.AEAD, headerProtector headerProtector) Long
 	}
 }
 
+func (o *longHeaderOpener) DecodePacketNumber(wirePN protocol.PacketNumber, wirePNLen protocol.PacketNumberLen) protocol.PacketNumber {
+	return protocol.DecodePacketNumber(wirePNLen, o.highestRcvdPN, wirePN)
+}
+
 func (o *longHeaderOpener) Open(dst, src []byte, pn protocol.PacketNumber, ad []byte) ([]byte, error) {
 	binary.BigEndian.PutUint64(o.nonceBuf[len(o.nonceBuf)-8:], uint64(pn))
 	// The AEAD we're using here will be the qtls.aeadAESGCM13.
 	// It uses the nonce provided here and XOR it with the IV.
 	dec, err := o.aead.Open(dst, o.nonceBuf, src, ad)
-	if err != nil {
-		dec, err = multiSealer.aead.Open(dst, o.nonceBuf, src, ad)
-		if err != nil {
-			fmt.Println(dst)
-			fmt.Println(o.nonceBuf)
-			fmt.Println(src)
-			fmt.Println(ad)
-			err = ErrDecryptionFailed
-		}
+	if err == nil {
+		o.highestRcvdPN = utils.MaxPacketNumber(o.highestRcvdPN, pn)
+	} else {
+		err = ErrDecryptionFailed
 	}
 	return dec, err
 }

@@ -60,6 +60,24 @@ var _ = Describe("Frames", func() {
 		)
 	})
 
+	It("marshals ACK frames with ECN counts", func() {
+		check(
+			&logging.AckFrame{
+				AckRanges: []logging.AckRange{{Smallest: 120, Largest: 120}},
+				ECT0:      10,
+				ECT1:      100,
+				ECNCE:     1000,
+			},
+			map[string]interface{}{
+				"frame_type":   "ack",
+				"acked_ranges": [][]float64{{120}},
+				"ect0":         10,
+				"ect1":         100,
+				"ce":           1000,
+			},
+		)
+	})
+
 	It("marshals ACK frames with a range acknowledging ranges of packets", func() {
 		check(
 			&logging.AckFrame{
@@ -131,8 +149,7 @@ var _ = Describe("Frames", func() {
 			},
 			map[string]interface{}{
 				"frame_type": "new_token",
-				"length":     4,
-				"token":      "deadbeef",
+				"token":      map[string]interface{}{"data": "deadbeef"},
 			},
 		)
 	})
@@ -326,7 +343,7 @@ var _ = Describe("Frames", func() {
 	It("marshals CONNECTION_CLOSE frames, for transport error codes", func() {
 		check(
 			&logging.ConnectionCloseFrame{
-				ErrorCode:    qerr.FlowControlError,
+				ErrorCode:    uint64(qerr.FlowControlError),
 				ReasonPhrase: "lorem ipsum",
 			},
 			map[string]interface{}{
@@ -344,6 +361,16 @@ var _ = Describe("Frames", func() {
 			&logging.HandshakeDoneFrame{},
 			map[string]interface{}{
 				"frame_type": "handshake_done",
+			},
+		)
+	})
+
+	It("marshals DATAGRAM frames", func() {
+		check(
+			&logging.DatagramFrame{Length: 1337},
+			map[string]interface{}{
+				"frame_type": "datagram",
+				"length":     1337,
 			},
 		)
 	})

@@ -4,7 +4,9 @@ import (
 	"time"
 
 	"github.com/jojokbh/quic-go/internal/protocol"
+	"github.com/jojokbh/quic-go/internal/qerr"
 	"github.com/jojokbh/quic-go/internal/utils"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -30,9 +32,9 @@ var _ = Describe("Stream Flow controller", func() {
 
 	Context("Constructor", func() {
 		rttStats := &utils.RTTStats{}
-		receiveWindow := protocol.ByteCount(2000)
-		maxReceiveWindow := protocol.ByteCount(3000)
-		sendWindow := protocol.ByteCount(4000)
+		const receiveWindow protocol.ByteCount = 2000
+		const maxReceiveWindow protocol.ByteCount = 3000
+		const sendWindow protocol.ByteCount = 4000
 
 		It("sets the send and receive windows", func() {
 			cc := NewConnectionFlowController(0, 0, nil, nil, utils.DefaultLogger)
@@ -43,14 +45,14 @@ var _ = Describe("Stream Flow controller", func() {
 			Expect(fc.sendWindow).To(Equal(sendWindow))
 		})
 
-		It("queues window updates with the correction stream ID", func() {
+		It("queues window updates with the correct stream ID", func() {
 			var queued bool
 			queueWindowUpdate := func(id protocol.StreamID) {
 				Expect(id).To(Equal(protocol.StreamID(5)))
 				queued = true
 			}
 
-			cc := NewConnectionFlowController(0, 0, nil, nil, utils.DefaultLogger)
+			cc := NewConnectionFlowController(receiveWindow, maxReceiveWindow, func() {}, nil, utils.DefaultLogger)
 			fc := NewStreamFlowController(5, cc, receiveWindow, maxReceiveWindow, sendWindow, queueWindowUpdate, rttStats, utils.DefaultLogger).(*streamFlowController)
 			fc.AddBytesRead(receiveWindow)
 			Expect(queued).To(BeTrue())
@@ -97,7 +99,10 @@ var _ = Describe("Stream Flow controller", func() {
 			})
 
 			It("detects a flow control violation", func() {
-				Expect(controller.UpdateHighestReceived(receiveWindow+1, false)).To(MatchError("FLOW_CONTROL_ERROR: Received 10001 bytes on stream 10, allowed 10000 bytes"))
+				Expect(controller.UpdateHighestReceived(receiveWindow+1, false)).To(MatchError(&qerr.TransportError{
+					ErrorCode:    qerr.FlowControlError,
+					ErrorMessage: "received 10001 bytes on stream 10, allowed 10000 bytes",
+				}))
 			})
 
 			It("accepts a final offset higher than the highest received", func() {
@@ -108,7 +113,10 @@ var _ = Describe("Stream Flow controller", func() {
 
 			It("errors when receiving a final offset smaller than the highest offset received so far", func() {
 				controller.UpdateHighestReceived(100, false)
-				Expect(controller.UpdateHighestReceived(50, true)).To(MatchError("FINAL_SIZE_ERROR: Received final offset 50 for stream 10, but already received offset 100 before"))
+				Expect(controller.UpdateHighestReceived(50, true)).To(MatchError(&qerr.TransportError{
+					ErrorCode:    qerr.FinalSizeError,
+					ErrorMessage: "received final offset 50 for stream 10, but already received offset 100 before",
+				}))
 			})
 
 			It("accepts delayed data after receiving a final offset", func() {
@@ -118,7 +126,10 @@ var _ = Describe("Stream Flow controller", func() {
 
 			It("errors when receiving a higher offset after receiving a final offset", func() {
 				Expect(controller.UpdateHighestReceived(200, true)).To(Succeed())
-				Expect(controller.UpdateHighestReceived(250, false)).To(MatchError("FINAL_SIZE_ERROR: Received offset 250 for stream 10. Final offset was already received at 200"))
+				Expect(controller.UpdateHighestReceived(250, false)).To(MatchError(&qerr.TransportError{
+					ErrorCode:    qerr.FinalSizeError,
+					ErrorMessage: "received offset 250 for stream 10, but final offset was already received at 200",
+				}))
 			})
 
 			It("accepts duplicate final offsets", func() {
@@ -129,7 +140,10 @@ var _ = Describe("Stream Flow controller", func() {
 
 			It("errors when receiving inconsistent final offsets", func() {
 				Expect(controller.UpdateHighestReceived(200, true)).To(Succeed())
-				Expect(controller.UpdateHighestReceived(201, true)).To(MatchError("FINAL_SIZE_ERROR: Received inconsistent final offset for stream 10 (old: 200, new: 201 bytes)"))
+				Expect(controller.UpdateHighestReceived(201, true)).To(MatchError(&qerr.TransportError{
+					ErrorCode:    qerr.FinalSizeError,
+					ErrorMessage: "received inconsistent final offset for stream 10 (old: 200, new: 201 bytes)",
+				}))
 			})
 
 			It("tells the connection flow controller when a stream is abandoned", func() {

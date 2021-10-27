@@ -3,18 +3,18 @@ package self_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	mrand "math/rand"
 	"net"
 	"sync/atomic"
 	"time"
 
-	quic "github.com/jojokbh/quic-go"
+	"github.com/jojokbh/quic-go"
 	quicproxy "github.com/jojokbh/quic-go/integrationtests/tools/proxy"
 	"github.com/jojokbh/quic-go/internal/protocol"
-	"github.com/jojokbh/quic-go/internal/qerr"
 	"github.com/jojokbh/quic-go/internal/testutils"
 	"github.com/jojokbh/quic-go/internal/wire"
 	. "github.com/onsi/ginkgo"
@@ -136,7 +136,7 @@ var _ = Describe("MITM test", func() {
 						Expect(err).ToNot(HaveOccurred())
 						str, err := sess.AcceptUniStream(context.Background())
 						Expect(err).ToNot(HaveOccurred())
-						data, err := ioutil.ReadAll(str)
+						data, err := io.ReadAll(str)
 						Expect(err).ToNot(HaveOccurred())
 						Expect(data).To(Equal(PRData))
 						Expect(sess.CloseWithError(0, "")).To(Succeed())
@@ -182,7 +182,7 @@ var _ = Describe("MITM test", func() {
 					Expect(err).ToNot(HaveOccurred())
 					str, err := sess.AcceptUniStream(context.Background())
 					Expect(err).ToNot(HaveOccurred())
-					data, err := ioutil.ReadAll(str)
+					data, err := io.ReadAll(str)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(data).To(Equal(PRData))
 					Expect(sess.CloseWithError(0, "")).To(Succeed())
@@ -215,19 +215,19 @@ var _ = Describe("MITM test", func() {
 				})
 
 				Context("corrupting packets", func() {
-					const interval = 10 // corrupt every 10th packet (stochastically)
 					const idleTimeout = time.Second
 
-					var numCorrupted int32
+					var numCorrupted, numPackets int32
 
 					BeforeEach(func() {
 						numCorrupted = 0
+						numPackets = 0
 						serverConfig.MaxIdleTimeout = idleTimeout
 					})
 
 					AfterEach(func() {
 						num := atomic.LoadInt32(&numCorrupted)
-						fmt.Fprintf(GinkgoWriter, "Corrupted %d packets.", num)
+						fmt.Fprintf(GinkgoWriter, "Corrupted %d of %d packets.", num, atomic.LoadInt32(&numPackets))
 						Expect(num).To(BeNumerically(">=", 1))
 						// If the packet containing the CONNECTION_CLOSE is corrupted,
 						// we have to wait for the session to time out.
@@ -235,15 +235,19 @@ var _ = Describe("MITM test", func() {
 					})
 
 					It("downloads a message when packet are corrupted towards the server", func() {
+						const interval = 4 // corrupt every 4th packet (stochastically)
 						dropCb := func(dir quicproxy.Direction, raw []byte) bool {
 							defer GinkgoRecover()
-							if dir == quicproxy.DirectionIncoming && mrand.Intn(interval) == 0 {
-								pos := mrand.Intn(len(raw))
-								raw[pos] = byte(mrand.Intn(256))
-								_, err := clientConn.WriteTo(raw, serverConn.LocalAddr())
-								Expect(err).ToNot(HaveOccurred())
-								atomic.AddInt32(&numCorrupted, 1)
-								return true
+							if dir == quicproxy.DirectionIncoming {
+								atomic.AddInt32(&numPackets, 1)
+								if mrand.Intn(interval) == 0 {
+									pos := mrand.Intn(len(raw))
+									raw[pos] = byte(mrand.Intn(256))
+									_, err := clientConn.WriteTo(raw, serverConn.LocalAddr())
+									Expect(err).ToNot(HaveOccurred())
+									atomic.AddInt32(&numCorrupted, 1)
+									return true
+								}
 							}
 							return false
 						}
@@ -251,15 +255,19 @@ var _ = Describe("MITM test", func() {
 					})
 
 					It("downloads a message when packet are corrupted towards the client", func() {
+						const interval = 10 // corrupt every 10th packet (stochastically)
 						dropCb := func(dir quicproxy.Direction, raw []byte) bool {
 							defer GinkgoRecover()
-							if dir == quicproxy.DirectionOutgoing && mrand.Intn(interval) == 0 {
-								pos := mrand.Intn(len(raw))
-								raw[pos] = byte(mrand.Intn(256))
-								_, err := serverConn.WriteTo(raw, clientConn.LocalAddr())
-								Expect(err).ToNot(HaveOccurred())
-								atomic.AddInt32(&numCorrupted, 1)
-								return true
+							if dir == quicproxy.DirectionOutgoing {
+								atomic.AddInt32(&numPackets, 1)
+								if mrand.Intn(interval) == 0 {
+									pos := mrand.Intn(len(raw))
+									raw[pos] = byte(mrand.Intn(256))
+									_, err := serverConn.WriteTo(raw, clientConn.LocalAddr())
+									Expect(err).ToNot(HaveOccurred())
+									atomic.AddInt32(&numCorrupted, 1)
+									return true
+								}
 							}
 							return false
 						}
@@ -320,8 +328,8 @@ var _ = Describe("MITM test", func() {
 				// expects hdr from an Initial packet intercepted from client
 				sendForgedInitialPacketWithAck := func(conn net.PacketConn, remoteAddr net.Addr, hdr *wire.Header) {
 					// Fake Initial with ACK for packet 2 (unsent)
-					ackFrame := testutils.ComposeAckFrame(2, 2)
-					initialPacket := testutils.ComposeInitialPacket(hdr.DestConnectionID, hdr.SrcConnectionID, hdr.Version, hdr.DestConnectionID, []wire.Frame{ackFrame})
+					ack := &wire.AckFrame{AckRanges: []wire.AckRange{{Smallest: 2, Largest: 2}}}
+					initialPacket := testutils.ComposeInitialPacket(hdr.DestConnectionID, hdr.SrcConnectionID, hdr.Version, hdr.DestConnectionID, []wire.Frame{ack})
 					_, err := conn.WriteTo(initialPacket, remoteAddr)
 					Expect(err).ToNot(HaveOccurred())
 				}
@@ -336,9 +344,9 @@ var _ = Describe("MITM test", func() {
 						fmt.Sprintf("localhost:%d", proxy.LocalPort()),
 						getTLSClientConfig(),
 						getQuicConfig(&quic.Config{
-							Versions:           []protocol.VersionNumber{version},
-							ConnectionIDLength: connIDLen,
-							HandshakeTimeout:   2 * time.Second,
+							Versions:             []protocol.VersionNumber{version},
+							ConnectionIDLength:   connIDLen,
+							HandshakeIdleTimeout: 2 * time.Second,
 						}),
 					)
 					return err
@@ -363,7 +371,8 @@ var _ = Describe("MITM test", func() {
 					}
 					err := runTest(delayCb)
 					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("No compatible QUIC version found."))
+					vnErr := &quic.VersionNegotiationError{}
+					Expect(errors.As(err, &vnErr)).To(BeTrue())
 				})
 
 				// times out, because client doesn't accept subsequent real retry packets from server
@@ -432,9 +441,10 @@ var _ = Describe("MITM test", func() {
 					}
 					err := runTest(delayCb)
 					Expect(err).To(HaveOccurred())
-					Expect(err).To(BeAssignableToTypeOf(&qerr.QuicError{}))
-					Expect(err.(*qerr.QuicError).ErrorCode).To(Equal(qerr.ProtocolViolation))
-					Expect(err.Error()).To(ContainSubstring("Received ACK for an unsent packet"))
+					var transportErr *quic.TransportError
+					Expect(errors.As(err, &transportErr)).To(BeTrue())
+					Expect(transportErr.ErrorCode).To(Equal(quic.ProtocolViolation))
+					Expect(transportErr.ErrorMessage).To(ContainSubstring("received ACK for an unsent packet"))
 				})
 			})
 		})

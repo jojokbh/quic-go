@@ -3,34 +3,49 @@ package http3
 import (
 	"bufio"
 	"bytes"
-	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/jojokbh/quic-go"
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/marten-seemann/qpack"
 )
 
-type responseWriter struct {
-	stream *bufio.Writer
+// DataStreamer lets the caller take over the stream. After a call to DataStream
+// the HTTP server library will not do anything else with the connection.
+//
+// It becomes the caller's responsibility to manage and close the stream.
+//
+// After a call to DataStream, the original Request.Body must not be used.
+type DataStreamer interface {
+	DataStream() quic.Stream
+}
 
-	header        http.Header
-	status        int // status code passed to WriteHeader
-	headerWritten bool
+type responseWriter struct {
+	stream         quic.Stream // needed for DataStream()
+	bufferedStream *bufio.Writer
+
+	header         http.Header
+	status         int // status code passed to WriteHeader
+	headerWritten  bool
+	dataStreamUsed bool // set when DataSteam() is called
 
 	logger utils.Logger
 }
 
-var _ http.ResponseWriter = &responseWriter{}
-var _ http.Flusher = &responseWriter{}
+var (
+	_ http.ResponseWriter = &responseWriter{}
+	_ http.Flusher        = &responseWriter{}
+	_ DataStreamer        = &responseWriter{}
+)
 
-func newResponseWriter(stream io.Writer, logger utils.Logger) *responseWriter {
+func newResponseWriter(stream quic.Stream, logger utils.Logger) *responseWriter {
 	return &responseWriter{
-		header: http.Header{},
-		stream: bufio.NewWriter(stream),
-		logger: logger,
+		header:         http.Header{},
+		stream:         stream,
+		bufferedStream: bufio.NewWriter(stream),
+		logger:         logger,
 	}
 }
 
@@ -42,7 +57,10 @@ func (w *responseWriter) WriteHeader(status int) {
 	if w.headerWritten {
 		return
 	}
-	w.headerWritten = true
+
+	if status < 100 || status >= 200 {
+		w.headerWritten = true
+	}
 	w.status = status
 
 	var headers bytes.Buffer
@@ -52,34 +70,21 @@ func (w *responseWriter) WriteHeader(status int) {
 	for k, v := range w.header {
 		for index := range v {
 			enc.WriteField(qpack.HeaderField{Name: strings.ToLower(k), Value: v[index]})
-			fmt.Println("H: ", k, " v ", v[index])
 		}
 	}
 
 	buf := &bytes.Buffer{}
 	(&headersFrame{Length: uint64(headers.Len())}).Write(buf)
 	w.logger.Infof("Responding with %d", status)
-
-	if _, err := w.stream.Write(buf.Bytes()); err != nil {
+	if _, err := w.bufferedStream.Write(buf.Bytes()); err != nil {
 		w.logger.Errorf("could not write headers frame: %s", err.Error())
 	}
-	if _, err := w.stream.Write(headers.Bytes()); err != nil {
+	if _, err := w.bufferedStream.Write(headers.Bytes()); err != nil {
 		w.logger.Errorf("could not write header frame payload: %s", err.Error())
 	}
-}
-
-func (w *responseWriter) getHeader(status int) []qpack.HeaderField {
-
-	h := []qpack.HeaderField{}
-	h = append(h, qpack.HeaderField{Name: ":status", Value: strconv.Itoa(status)})
-
-	for k, v := range w.header {
-		for index := range v {
-			h = append(h, qpack.HeaderField{Name: strings.ToLower(k), Value: v[index]})
-		}
+	if !w.headerWritten {
+		w.Flush()
 	}
-
-	return h
 }
 
 func (w *responseWriter) Write(p []byte) (int, error) {
@@ -92,16 +97,26 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 	df := &dataFrame{Length: uint64(len(p))}
 	buf := &bytes.Buffer{}
 	df.Write(buf)
-	if _, err := w.stream.Write(buf.Bytes()); err != nil {
+	if _, err := w.bufferedStream.Write(buf.Bytes()); err != nil {
 		return 0, err
 	}
-	return w.stream.Write(p)
+	return w.bufferedStream.Write(p)
 }
 
 func (w *responseWriter) Flush() {
-	if err := w.stream.Flush(); err != nil {
+	if err := w.bufferedStream.Flush(); err != nil {
 		w.logger.Errorf("could not flush to stream: %s", err.Error())
 	}
+}
+
+func (w *responseWriter) usedDataStream() bool {
+	return w.dataStreamUsed
+}
+
+func (w *responseWriter) DataStream() quic.Stream {
+	w.dataStreamUsed = true
+	w.Flush()
+	return w.stream
 }
 
 // copied from http2/http2.go

@@ -9,7 +9,6 @@ import (
 	"github.com/jojokbh/quic-go"
 	"github.com/jojokbh/quic-go/fuzzing/internal/helper"
 	"github.com/jojokbh/quic-go/internal/protocol"
-	"github.com/jojokbh/quic-go/internal/qerr"
 	"github.com/jojokbh/quic-go/internal/wire"
 )
 
@@ -115,20 +114,27 @@ func getFrames() []wire.Frame {
 			AckRanges: getAckRanges(300),
 			DelayTime: time.Duration(getRandomNumber()),
 		},
+		&wire.AckFrame{
+			AckRanges: getAckRanges(3),
+			DelayTime: time.Duration(getRandomNumber()),
+			ECT0:      getRandomNumber(),
+			ECT1:      getRandomNumber(),
+			ECNCE:     getRandomNumber(),
+		},
 		&wire.PingFrame{},
 		&wire.ResetStreamFrame{
 			StreamID:  protocol.StreamID(getRandomNumber()),
-			ErrorCode: quic.ErrorCode(getRandomNumber()),
+			ErrorCode: quic.StreamErrorCode(getRandomNumber()),
 			FinalSize: protocol.ByteCount(getRandomNumber()),
 		},
 		&wire.ResetStreamFrame{ // at maximum offset
 			StreamID:  protocol.StreamID(getRandomNumber()),
-			ErrorCode: quic.ErrorCode(getRandomNumber()),
+			ErrorCode: quic.StreamErrorCode(getRandomNumber()),
 			FinalSize: protocol.MaxByteCount,
 		},
 		&wire.StopSendingFrame{
 			StreamID:  protocol.StreamID(getRandomNumber()),
-			ErrorCode: quic.ErrorCode(getRandomNumber()),
+			ErrorCode: quic.StreamErrorCode(getRandomNumber()),
 		},
 		&wire.CryptoFrame{
 			Data: getRandomData(100),
@@ -189,23 +195,23 @@ func getFrames() []wire.Frame {
 		},
 		&wire.ConnectionCloseFrame{ // QUIC error with empty reason
 			IsApplicationError: false,
-			ErrorCode:          qerr.ErrorCode(getRandomNumber()),
+			ErrorCode:          getRandomNumber(),
 			ReasonPhrase:       "",
 		},
 		&wire.ConnectionCloseFrame{ // QUIC error with reason
 			IsApplicationError: false,
 			// TODO: add frame type
-			ErrorCode:    qerr.ErrorCode(getRandomNumber()),
+			ErrorCode:    getRandomNumber(),
 			ReasonPhrase: string(getRandomData(100)),
 		},
 		&wire.ConnectionCloseFrame{ // application error with empty reason
 			IsApplicationError: true,
-			ErrorCode:          qerr.ErrorCode(getRandomNumber()),
+			ErrorCode:          getRandomNumber(),
 			ReasonPhrase:       "",
 		},
 		&wire.ConnectionCloseFrame{ // application error with reason
 			IsApplicationError: true,
-			ErrorCode:          qerr.ErrorCode(getRandomNumber()),
+			ErrorCode:          getRandomNumber(),
 			ReasonPhrase:       string(getRandomData(100)),
 		},
 	}

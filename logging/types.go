@@ -1,9 +1,7 @@
 package logging
 
-import "github.com/jojokbh/quic-go/internal/protocol"
-
 // PacketType is the packet type of a QUIC packet
-type PacketType = protocol.PacketType
+type PacketType uint8
 
 const (
 	// PacketTypeInitial is the packet type of an Initial packet
@@ -18,8 +16,6 @@ const (
 	PacketTypeVersionNegotiation
 	// PacketType1RTT is a 1-RTT packet
 	PacketType1RTT
-	// PacketType1RTT is a 1-RTT packet
-	PacketTypeMulti
 	// PacketTypeStatelessReset is a stateless reset
 	PacketTypeStatelessReset
 	// PacketTypeNotDetermined is the packet type when it could not be determined

@@ -7,9 +7,6 @@ import (
 // PacketTypeFromHeader determines the packet type from a *wire.Header.
 func PacketTypeFromHeader(hdr *Header) PacketType {
 	if !hdr.IsLongHeader {
-		if hdr.PacketType() == "PacketTypeMulti" {
-			return PacketTypeMulti
-		}
 		return PacketType1RTT
 	}
 	if hdr.Version == 0 {
@@ -27,19 +24,4 @@ func PacketTypeFromHeader(hdr *Header) PacketType {
 	default:
 		return PacketTypeNotDetermined
 	}
-}
-
-// PacketHeader is a QUIC packet header.
-type PacketHeader struct {
-	PacketType PacketType
-
-	PacketNumber  PacketNumber
-	PayloadLength ByteCount
-	// Size of the QUIC packet (QUIC header + payload).
-	// See https://github.com/quiclog/internet-drafts/issues/40.
-	PacketSize ByteCount
-
-	Version          VersionNumber
-	SrcConnectionID  ConnectionID
-	DestConnectionID ConnectionID
 }

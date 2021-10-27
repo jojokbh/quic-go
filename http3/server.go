@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"runtime"
@@ -18,19 +16,40 @@ import (
 	"time"
 
 	"github.com/jojokbh/quic-go"
+	"github.com/jojokbh/quic-go/internal/handshake"
+	"github.com/jojokbh/quic-go/internal/protocol"
 	"github.com/jojokbh/quic-go/internal/utils"
+	"github.com/jojokbh/quic-go/quicvarint"
 	"github.com/marten-seemann/qpack"
 )
 
 // allows mocking of quic.Listen and quic.ListenAddr
 var (
-	quicListen          = quic.ListenEarly
-	quicListenMulti     = quic.ListenMultiEarly
-	quicListenAddr      = quic.ListenAddrEarly
-	quicListenMultiAddr = quic.ListenMultiAddrEarly
+	quicListen     = quic.ListenEarly
+	quicListenAddr = quic.ListenAddrEarly
 )
 
-const nextProtoH3 = "h3-29"
+const (
+	nextProtoH3Draft29 = "h3-29"
+	nextProtoH3        = "h3"
+)
+
+const (
+	streamTypeControlStream      = 0
+	streamTypePushStream         = 1
+	streamTypeQPACKEncoderStream = 2
+	streamTypeQPACKDecoderStream = 3
+)
+
+func versionToALPN(v protocol.VersionNumber) string {
+	if v == protocol.Version1 {
+		return nextProtoH3
+	}
+	if v == protocol.VersionTLS || v == protocol.VersionDraft29 {
+		return nextProtoH3Draft29
+	}
+	return ""
+}
 
 // contextKey is a value for use with context.WithValue. It's used as
 // a pointer so it fits in an interface{} without allocation.
@@ -40,13 +59,11 @@ type contextKey struct {
 
 func (k *contextKey) String() string { return "quic-go/http3 context value " + k.name }
 
-var (
-	// ServerContextKey is a context key. It can be used in HTTP
-	// handlers with Context.Value to access the server that
-	// started the handler. The associated value will be of
-	// type *http3.Server.
-	ServerContextKey = &contextKey{"http3-server"}
-)
+// ServerContextKey is a context key. It can be used in HTTP
+// handlers with Context.Value to access the server that
+// started the handler. The associated value will be of
+// type *http3.Server.
+var ServerContextKey = &contextKey{"http3-server"}
 
 type requestError struct {
 	err       error
@@ -62,18 +79,18 @@ func newConnError(code errorCode, err error) requestError {
 	return requestError{err: err, connErr: code}
 }
 
-// Server is a HTTP2 server listening for QUIC connections.
+// Server is a HTTP/3 server.
 type Server struct {
-	UniCast   *http.Server
-	MultiCast *http.Server
-
-	Multistream quic.Stream
-
-	MultiStreamID int64
+	*http.Server
 
 	// By providing a quic.Config, it is possible to set parameters of the QUIC connection.
 	// If nil, it uses reasonable default values.
 	QuicConfig *quic.Config
+
+	// Enable support for HTTP/3 datagrams.
+	// If set to true, QuicConfig.EnableDatagram will be set.
+	// See https://www.ietf.org/archive/id/draft-schinazi-masque-h3-datagram-02.html.
+	EnableDatagrams bool
 
 	port uint32 // used atomically
 
@@ -83,248 +100,97 @@ type Server struct {
 
 	loggerOnce sync.Once
 	logger     utils.Logger
-	ifat       *net.Interface
 }
 
 // ListenAndServe listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
 func (s *Server) ListenAndServe() error {
-	if s.UniCast == nil {
+	if s.Server == nil {
 		return errors.New("use of http3.Server without http.Server")
 	}
-	return s.serveImpl(s.UniCast.TLSConfig, nil)
+	return s.serveImpl(s.TLSConfig, nil)
 }
 
 // ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
-func (s *Server) ListenAndServeTLS(config *tls.Config) error {
-	/*
-		var err error
-		certs := make([]tls.Certificate, 1)
-		certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			return err
-		}
-		// We currently only use the cert-related stuff from tls.Config,
-		// so we don't need to make a full copy.
-		config := &tls.Config{
-			Certificates: certs,
-		}
-	*/
-	return s.serveImpl(config, nil)
-}
-
-// ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
-func (s *Server) ListenAndServeTLSMultiFolder(config *tls.Config, ifat *net.Interface, folder chan string, enableMulticast *bool) error {
-	/*
-		var err error
-		certs := make([]tls.Certificate, 1)
-		certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			return err
-		}
-		// We currently only use the cert-related stuff from tls.Config,
-		// so we don't need to make a full copy.
-		config := &tls.Config{
-			Certificates: certs,
-		}
-
-		logger := utils.DefaultLogger
-
-		s.logger = logger
-		s.logger.SetLogLevel(utils.LogLevelDebug)
-	*/
-
-	multiRequest = map[string]int64{}
-	sessions = map[string][]quic.Stream{}
-	s.MultiStreamID = 0
-	go s.multiCast(enableMulticast, folder)
-	return s.serveImplMulti(config, ifat, nil, nil)
-}
-
-func (s *Server) multiCast(enableMulticast *bool, files chan string) {
-	s.logger.Infof("Started multicast: ")
-	//s.MultiCast.Addr, s.UniCast.Addr
-
-	pool, err := x509.SystemCertPool()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	tlsconf := &tls.Config{
-		RootCAs:            pool,
-		InsecureSkipVerify: true,
-	}
-
-	roundTripper := &RoundTripper{
-		Ifat:            s.ifat,
-		MultiAddr:       s.MultiCast.Addr,
-		TLSClientConfig: tlsconf,
-		QuicConfig:      s.QuicConfig,
-	}
-
-	fmt.Println(roundTripper)
-	defer roundTripper.Close()
-
-	hclient := &http.Client{
-		Transport: roundTripper,
-	}
-
-	time.Sleep(time.Second * 2)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	for {
-		select {
-		case file := <-files:
-			if *enableMulticast && !strings.Contains(file, "m3u8") {
-				//url := "https://" + s.UniCast.Addr + "/" + file
-				success := getTest(file, hclient)
-				if false {
-					fmt.Println(success)
-				}
-
-			}
-		default:
-		}
-
-	}
-}
-
-func getTest(file string, hclient *http.Client) bool {
-	url := file
-	fmt.Println("Sending ", url)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		fmt.Println("Error ", err)
-		return false
-	}
-	req.Header.Set("Multicast", "true")
-	res, err := hclient.Do(req)
-	if err != nil {
-		log.Fatal(err)
-		return false
-	}
-
-	pass := &PassThru{}
-	written, err := io.Copy(pass, res.Body)
-	if err != nil {
-		log.Fatal(err)
-		return false
-	}
-
-	if res.StatusCode == 200 {
-		fmt.Println("Received ", url, written, res.Header["Content-Length"])
-		return true
-	} else {
-		fmt.Println("Error code ", res.StatusCode)
-		return false
-	}
-}
-
-type PassThru struct {
-	Reader io.Reader
-	Writer io.Writer
-	total  int64 // Total # of bytes transferred
-	done   bool  // Total # of bytes transferred
-	//File     *os.File
-	buf []byte // contents are the bytes buf[off : len(buf)]
-	off int    // read at &buf[off], write at &buf[len(buf)]
-}
-
-func (pt *PassThru) Write(p []byte) (int, error) {
+func (s *Server) ListenAndServeTLS(certFile, keyFile string) error {
 	var err error
-	pt.total += int64(len(p))
-	//fmt.Println("Read", p, "bytes for a total of", pt.total)
-
-	return len(p), err
-}
-
-func (pt *PassThru) Read(p []byte) (int, error) {
-	n, err := pt.Reader.Read(p)
-	if err == nil {
-		pt.total += int64(n)
-		fmt.Println("Read", n, "bytes for a total of", pt.total)
+	certs := make([]tls.Certificate, 1)
+	certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return err
 	}
-
-	if int64(n) == pt.total {
-		//pt.Reader.CancelRead(0)
-		fmt.Println("Done pass")
-		pt.done = true
+	// We currently only use the cert-related stuff from tls.Config,
+	// so we don't need to make a full copy.
+	config := &tls.Config{
+		Certificates: certs,
 	}
-	return n, err
-}
-
-// ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
-func (s *Server) ListenAndServeTLSMulti(config *tls.Config, ifat *net.Interface) error {
-	/*
-		var err error
-		certs := make([]tls.Certificate, 1)
-		certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			return err
-		}
-		// We currently only use the cert-related stuff from tls.Config,
-		// so we don't need to make a full copy.
-		config := &tls.Config{
-			Certificates: certs,
-		}
-	*/
-	multiRequest = map[string]int64{}
-	sessions = map[string][]quic.Stream{}
-	s.MultiStreamID = 0
-	return s.serveImplMulti(config, ifat, nil, nil)
+	return s.serveImpl(config, nil)
 }
 
 // Serve an existing UDP connection.
 // It is possible to reuse the same connection for outgoing connections.
 // Closing the server does not close the packet conn.
 func (s *Server) Serve(conn net.PacketConn) error {
-	return s.serveImpl(s.UniCast.TLSConfig, conn)
-}
-
-// Serve an existing UDP connection.
-// It is possible to reuse the same connection for outgoing connections.
-// Closing the server does not close the packet conn.
-func (s *Server) ServeMulti(conn net.PacketConn, multiConn *net.UDPConn) error {
-	return s.serveImplMulti(s.MultiCast.TLSConfig, s.ifat, conn, multiConn)
+	return s.serveImpl(s.TLSConfig, conn)
 }
 
 func (s *Server) serveImpl(tlsConf *tls.Config, conn net.PacketConn) error {
 	if s.closed.Get() {
 		return http.ErrServerClosed
 	}
-	if s.UniCast == nil {
+	if s.Server == nil {
 		return errors.New("use of http3.Server without http.Server")
 	}
 	s.loggerOnce.Do(func() {
 		s.logger = utils.DefaultLogger.WithPrefix("server")
 	})
 
-	if tlsConf == nil {
-		tlsConf = &tls.Config{}
-	} else {
-		tlsConf = tlsConf.Clone()
-	}
-	// Replace existing ALPNs by H3
-	tlsConf.NextProtos = []string{nextProtoH3}
-	if tlsConf.GetConfigForClient != nil {
-		getConfigForClient := tlsConf.GetConfigForClient
-		tlsConf.GetConfigForClient = func(ch *tls.ClientHelloInfo) (*tls.Config, error) {
-			conf, err := getConfigForClient(ch)
-			if err != nil || conf == nil {
-				return conf, err
+	// The tls.Config we pass to Listen needs to have the GetConfigForClient callback set.
+	// That way, we can get the QUIC version and set the correct ALPN value.
+	baseConf := &tls.Config{
+		GetConfigForClient: func(ch *tls.ClientHelloInfo) (*tls.Config, error) {
+			// determine the ALPN from the QUIC version used
+			proto := nextProtoH3Draft29
+			if qconn, ok := ch.Conn.(handshake.ConnWithVersion); ok {
+				if qconn.GetQUICVersion() == protocol.Version1 {
+					proto = nextProtoH3
+				}
 			}
-			conf = conf.Clone()
-			conf.NextProtos = []string{nextProtoH3}
-			return conf, nil
-		}
+			config := tlsConf
+			if tlsConf.GetConfigForClient != nil {
+				getConfigForClient := tlsConf.GetConfigForClient
+				var err error
+				conf, err := getConfigForClient(ch)
+				if err != nil {
+					return nil, err
+				}
+				if conf != nil {
+					config = conf
+				}
+			}
+			if config == nil {
+				return nil, nil
+			}
+			config = config.Clone()
+			config.NextProtos = []string{proto}
+			return config, nil
+		},
 	}
 
 	var ln quic.EarlyListener
 	var err error
+	quicConf := s.QuicConfig
+	if quicConf == nil {
+		quicConf = &quic.Config{}
+	} else {
+		quicConf = s.QuicConfig.Clone()
+	}
+	if s.EnableDatagrams {
+		quicConf.EnableDatagrams = true
+	}
 	if conn == nil {
-		ln, err = quicListenAddr(s.UniCast.Addr, tlsConf, s.QuicConfig)
+		ln, err = quicListenAddr(s.Addr, baseConf, quicConf)
 	} else {
-		ln, err = quicListen(conn, tlsConf, s.QuicConfig)
+		ln, err = quicListen(conn, baseConf, quicConf)
 	}
 	if err != nil {
 		return err
@@ -336,65 +202,6 @@ func (s *Server) serveImpl(tlsConf *tls.Config, conn net.PacketConn) error {
 		sess, err := ln.Accept(context.Background())
 		if err != nil {
 			return err
-		}
-		go s.handleConn(sess)
-	}
-}
-
-func (s *Server) serveImplMulti(tlsConf *tls.Config, ifat *net.Interface, conn net.PacketConn, multiConn *net.UDPConn) error {
-	if s.closed.Get() {
-		return http.ErrServerClosed
-	}
-	if s.UniCast == nil {
-		return errors.New("use of http3.Server without http.Server")
-	}
-	s.loggerOnce.Do(func() {
-		s.logger = utils.DefaultLogger.WithPrefix("server")
-	})
-
-	if tlsConf == nil {
-		tlsConf = &tls.Config{}
-	} else {
-		tlsConf = tlsConf.Clone()
-	}
-	// Replace existing ALPNs by H3
-	tlsConf.NextProtos = []string{nextProtoH3}
-	if tlsConf.GetConfigForClient != nil {
-		getConfigForClient := tlsConf.GetConfigForClient
-		tlsConf.GetConfigForClient = func(ch *tls.ClientHelloInfo) (*tls.Config, error) {
-			conf, err := getConfigForClient(ch)
-			if err != nil || conf == nil {
-				return conf, err
-			}
-			conf = conf.Clone()
-			conf.NextProtos = []string{nextProtoH3}
-			return conf, nil
-		}
-	}
-
-	var err error
-
-	var ln quic.EarlyListener
-	if conn == nil && multiConn == nil {
-		println("Listen multi " + s.MultiCast.Addr)
-		ln, err = quicListenMultiAddr(s.UniCast.Addr, s.MultiCast.Addr, tlsConf, ifat, s.QuicConfig)
-	} else {
-		println("Listen multi established")
-		ln, err = quicListenMulti(conn, multiConn, tlsConf, s.QuicConfig)
-	}
-	if err != nil {
-		return err
-	}
-	s.addListener(&ln)
-	defer s.removeListener(&ln)
-
-	for {
-		sess, err := ln.Accept(context.Background())
-		if err != nil {
-			return err
-		}
-		if s.Multistream == nil {
-			//go s.handleMultiConn(sess)
 		}
 		go s.handleConn(sess)
 	}
@@ -419,7 +226,6 @@ func (s *Server) removeListener(l *quic.EarlyListener) {
 }
 
 func (s *Server) handleConn(sess quic.EarlySession) {
-	// TODO: accept control streams
 	decoder := qpack.NewDecoder(nil)
 
 	// send a SETTINGS frame
@@ -428,9 +234,12 @@ func (s *Server) handleConn(sess quic.EarlySession) {
 		s.logger.Debugf("Opening the control stream failed.")
 		return
 	}
-	buf := bytes.NewBuffer([]byte{0})
-	(&settingsFrame{}).Write(buf)
+	buf := &bytes.Buffer{}
+	quicvarint.Write(buf, streamTypeControlStream) // stream type
+	(&settingsFrame{Datagram: s.EnableDatagrams}).Write(buf)
 	str.Write(buf.Bytes())
+
+	go s.handleUnidirectionalStreams(sess)
 
 	// Process all requests immediately.
 	// It's the client's responsibility to decide which requests are eligible for 0-RTT.
@@ -441,21 +250,20 @@ func (s *Server) handleConn(sess quic.EarlySession) {
 			return
 		}
 		go func() {
-
 			rerr := s.handleRequest(sess, str, decoder, func() {
-				sess.CloseWithError(quic.ErrorCode(errorFrameUnexpected), "")
+				sess.CloseWithError(quic.ApplicationErrorCode(errorFrameUnexpected), "")
 			})
 			if rerr.err != nil || rerr.streamErr != 0 || rerr.connErr != 0 {
 				s.logger.Debugf("Handling request failed: %s", err)
 				if rerr.streamErr != 0 {
-					str.CancelWrite(quic.ErrorCode(rerr.streamErr))
+					str.CancelWrite(quic.StreamErrorCode(rerr.streamErr))
 				}
 				if rerr.connErr != 0 {
 					var reason string
 					if rerr.err != nil {
 						reason = rerr.err.Error()
 					}
-					sess.CloseWithError(quic.ErrorCode(rerr.connErr), reason)
+					sess.CloseWithError(quic.ApplicationErrorCode(rerr.connErr), reason)
 				}
 				return
 			}
@@ -464,73 +272,63 @@ func (s *Server) handleConn(sess quic.EarlySession) {
 	}
 }
 
-func (s *Server) handleMultiConn(sess quic.EarlySession) {
-	// TODO: accept control streams
-	//decoder := qpack.NewDecoder(nil)
-
-	// send a SETTINGS frame
-	strMulti, err := sess.OpenUniStream()
-	if err != nil {
-		s.logger.Debugf("Opening the control stream failed.")
-		return
-	}
-	buf := bytes.NewBuffer([]byte{0})
-	(&settingsFrame{}).Write(buf)
-	strMulti.Write(buf.Bytes())
-
-	strMulti, err = sess.AcceptStream(context.Background())
-	if err != nil {
-		s.logger.Debugf("Accepting stream failed: %s", err)
-		return
-	}
-
-	// Process all requests immediately.
-	// It's the client's responsibility to decide which requests are eligible for 0-RTT.
+func (s *Server) handleUnidirectionalStreams(sess quic.EarlySession) {
 	for {
-		_, err := sess.AcceptStream(context.Background())
+		str, err := sess.AcceptUniStream(context.Background())
 		if err != nil {
-			s.logger.Debugf("Accepting stream failed: %s", err)
+			s.logger.Debugf("accepting unidirectional stream failed: %s", err)
 			return
 		}
-		s.Multistream, err = sess.OpenStream()
-		if err != nil {
-			fmt.Println("Multistream open error")
-			break
-		}
-		/*
-			go func() {
-				rerr := s.handleRequest(sess, strMulti, decoder, func() {
-					sess.CloseWithError(quic.ErrorCode(errorFrameUnexpected), "")
-				})
-				if rerr.err != nil || rerr.streamErr != 0 || rerr.connErr != 0 {
-					s.logger.Debugf("Handling request failed: %s", err)
-					if rerr.streamErr != 0 {
-						strMulti.CancelWrite(quic.ErrorCode(rerr.streamErr))
-					}
-					if rerr.connErr != 0 {
-						var reason string
-						if rerr.err != nil {
-							reason = rerr.err.Error()
-						}
-						sess.CloseWithError(quic.ErrorCode(rerr.connErr), reason)
-					}
-					return
-				}
-				strMulti.Close()
-			}()
-		*/
+
+		go func(str quic.ReceiveStream) {
+			streamType, err := quicvarint.Read(quicvarint.NewReader(str))
+			if err != nil {
+				s.logger.Debugf("reading stream type on stream %d failed: %s", str.StreamID(), err)
+				return
+			}
+			// We're only interested in the control stream here.
+			switch streamType {
+			case streamTypeControlStream:
+			case streamTypeQPACKEncoderStream, streamTypeQPACKDecoderStream:
+				// Our QPACK implementation doesn't use the dynamic table yet.
+				// TODO: check that only one stream of each type is opened.
+				return
+			case streamTypePushStream: // only the server can push
+				sess.CloseWithError(quic.ApplicationErrorCode(errorStreamCreationError), "")
+				return
+			default:
+				str.CancelRead(quic.StreamErrorCode(errorStreamCreationError))
+				return
+			}
+			f, err := parseNextFrame(str)
+			if err != nil {
+				sess.CloseWithError(quic.ApplicationErrorCode(errorFrameError), "")
+				return
+			}
+			sf, ok := f.(*settingsFrame)
+			if !ok {
+				sess.CloseWithError(quic.ApplicationErrorCode(errorMissingSettings), "")
+				return
+			}
+			if !sf.Datagram {
+				return
+			}
+			// If datagram support was enabled on our side as well as on the client side,
+			// we can expect it to have been negotiated both on the transport and on the HTTP/3 layer.
+			// Note: ConnectionState() will block until the handshake is complete (relevant when using 0-RTT).
+			if s.EnableDatagrams && !sess.ConnectionState().SupportsDatagrams {
+				sess.CloseWithError(quic.ApplicationErrorCode(errorSettingsError), "missing QUIC Datagram support")
+			}
+		}(str)
 	}
 }
 
 func (s *Server) maxHeaderBytes() uint64 {
-	if s.UniCast.MaxHeaderBytes <= 0 {
+	if s.Server.MaxHeaderBytes <= 0 {
 		return http.DefaultMaxHeaderBytes
 	}
-	return uint64(s.UniCast.MaxHeaderBytes)
+	return uint64(s.Server.MaxHeaderBytes)
 }
-
-var multiRequest map[string]int64
-var sessions map[string][]quic.Stream
 
 func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpack.Decoder, onFrameError func()) requestError {
 	frame, err := parseNextFrame(str)
@@ -568,20 +366,10 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 		s.logger.Infof("%s %s%s", req.Method, req.Host, req.RequestURI)
 	}
 
-	fmt.Printf("%s %s%s, on stream %d from %s", req.Method, req.Host, req.RequestURI, str.StreamID(), req.RemoteAddr)
-
 	ctx := str.Context()
 	ctx = context.WithValue(ctx, ServerContextKey, s)
 	ctx = context.WithValue(ctx, http.LocalAddrContextKey, sess.LocalAddr())
 	req = req.WithContext(ctx)
-
-	responseWriter := newResponseWriter(str, s.logger)
-	defer responseWriter.Flush()
-
-	handler := s.UniCast.Handler
-
-	fmt.Println()
-	fmt.Println("multicast ", req.Header["Multicast"])
 
 	multiHeaderValue, multiHeader := req.Header["Multicast"]
 
@@ -592,49 +380,15 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 			multiHeader = false
 		}
 	}
+	fmt.Println(multiHeader)
 
-	//Decide when to retransmit on multicast or unicast segment
-	//if _, ok := multiRequest[req.RequestURI]; !ok && multiHeader {
-	if _, ok := multiRequest[req.RequestURI]; !ok && multiHeader {
-		multiRequest[req.RequestURI] = int64(str.StreamID())
-		fmt.Println("Set multicast handler!! ", str.StreamID())
-
-		handler = s.MultiCast.Handler
-		sess.SetMulti(true)
-		go func() {
-			time.Sleep(time.Millisecond * 100)
-			contentLength := responseWriter.header.Values("Content-Length")
-			fmt.Println(contentLength)
-			if len(contentLength) > 0 {
-
-				sess.NewFile(req.RequestURI + " c: " + contentLength[0])
-
-				/*
-					//Send header info for all
-					for s, r := range sessions {
-						for _, q := range r {
-							fmt.Println(s, " write to ", q.StreamID())
-							header := responseWriter.header.Clone()
-							fmt.Println(header)
-							header.Write(q)
-						}
-					}
-				*/
-			}
-		}()
-
-	} else if strings.Contains(req.RequestURI, ".m3u8") {
-		/*
-			if sessions[req.RequestURI] == nil {
-				sessions[req.RequestURI] = []quic.Stream{}
-			}
-			sessions[req.RequestURI] = append(sessions[req.RequestURI], str)
-			sess.SetMulti(false)
-		*/
-	} else {
-		sess.SetMulti(false)
-	}
-
+	r := newResponseWriter(str, s.logger)
+	defer func() {
+		if !r.usedDataStream() {
+			r.Flush()
+		}
+	}()
+	handler := s.Handler
 	if handler == nil {
 		handler = http.DefaultServeMux
 	}
@@ -651,22 +405,18 @@ func (s *Server) handleRequest(sess quic.Session, str quic.Stream, decoder *qpac
 				panicked = true
 			}
 		}()
-
-		handler.ServeHTTP(responseWriter, req)
-
-		fmt.Println("HEADER TEST!")
-		fmt.Println(responseWriter.getHeader(200))
-		fmt.Println(responseWriter.Header())
+		handler.ServeHTTP(r, req)
 	}()
 
-	if panicked {
-		responseWriter.WriteHeader(500)
-	} else {
-		responseWriter.WriteHeader(200)
+	if !r.usedDataStream() {
+		if panicked {
+			r.WriteHeader(500)
+		} else {
+			r.WriteHeader(200)
+		}
+		// If the EOF was read by the handler, CancelRead() is a no-op.
+		str.CancelRead(quic.StreamErrorCode(errorNoError))
 	}
-
-	// If the EOF was read by the handler, CancelRead() is a no-op.
-	str.CancelRead(quic.ErrorCode(errorNoError))
 	return requestError{}
 }
 
@@ -702,7 +452,7 @@ func (s *Server) SetQuicHeaders(hdr http.Header) error {
 
 	if port == 0 {
 		// Extract port from s.Server.Addr
-		_, portStr, err := net.SplitHostPort(s.UniCast.Addr)
+		_, portStr, err := net.SplitHostPort(s.Server.Addr)
 		if err != nil {
 			return err
 		}
@@ -714,8 +464,19 @@ func (s *Server) SetQuicHeaders(hdr http.Header) error {
 		atomic.StoreUint32(&s.port, port)
 	}
 
-	hdr.Add("Alt-Svc", fmt.Sprintf(`%s=":%d"; ma=2592000`, nextProtoH3, port))
-
+	// This code assumes that we will use protocol.SupportedVersions if no quic.Config is passed.
+	supportedVersions := protocol.SupportedVersions
+	if s.QuicConfig != nil && len(s.QuicConfig.Versions) > 0 {
+		supportedVersions = s.QuicConfig.Versions
+	}
+	altSvc := make([]string, 0, len(supportedVersions))
+	for _, version := range supportedVersions {
+		v := versionToALPN(version)
+		if len(v) > 0 {
+			altSvc = append(altSvc, fmt.Sprintf(`%s=":%d"; ma=2592000`, v, port))
+		}
+	}
+	hdr.Add("Alt-Svc", strings.Join(altSvc, ","))
 	return nil
 }
 
@@ -724,23 +485,12 @@ func (s *Server) SetQuicHeaders(hdr http.Header) error {
 // used when handler is nil.
 func ListenAndServeQUIC(addr, certFile, keyFile string, handler http.Handler) error {
 	server := &Server{
-		UniCast: &http.Server{
+		Server: &http.Server{
 			Addr:    addr,
 			Handler: handler,
 		},
 	}
-	var err error
-	certs := make([]tls.Certificate, 1)
-	certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return err
-	}
-	// We currently only use the cert-related stuff from tls.Config,
-	// so we don't need to make a full copy.
-	config := &tls.Config{
-		Certificates: certs,
-	}
-	return server.ListenAndServeTLS(config)
+	return server.ListenAndServeTLS(certFile, keyFile)
 }
 
 // ListenAndServe listens on the given network address for both, TLS and QUIC
@@ -792,7 +542,7 @@ func ListenAndServe(addr, certFile, keyFile string, handler http.Handler) error 
 	}
 
 	quicServer := &Server{
-		UniCast: httpServer,
+		Server: httpServer,
 	}
 
 	if handler == nil {
@@ -822,110 +572,7 @@ func ListenAndServe(addr, certFile, keyFile string, handler http.Handler) error 
 	}
 }
 
-// ListenAndServeMulti listens on the given network address' for both, TLS and QUIC
-// connetions in parallel. It returns if one of the two returns an error.
-// http.DefaultServeMux is used when handler is nil.
-// The correct Alt-Svc headers for QUIC are set.
-func ListenAndServeMulti(addr, multiAddr, certFile, keyFile string, handler http.Handler) error {
-	// Load certs
-	var err error
-	certs := make([]tls.Certificate, 1)
-	certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return err
-	}
-	// We currently only use the cert-related stuff from tls.Config,
-	// so we don't need to make a full copy.
-	config := &tls.Config{
-		Certificates: certs,
-	}
+func (s *Server) ListenACK(conn net.PacketConn) error {
 
-	// Open the listeners
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return err
-	}
-	udpConn, err := net.ListenUDP("udp", udpAddr)
-	if err != nil {
-		return err
-	}
-	defer udpConn.Close()
-
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		return err
-	}
-	tcpConn, err := net.ListenTCP("tcp", tcpAddr)
-	if err != nil {
-		return err
-	}
-	defer tcpConn.Close()
-
-	tlsConn := tls.NewListener(tcpConn, config)
-	defer tlsConn.Close()
-
-	multiUdpAddr, err := net.ResolveUDPAddr("udp", multiAddr)
-	if err != nil {
-		println("Error #3 " + err.Error())
-		return err
-	}
-
-	// Open the multicast connection
-	multiUdpConn, err := net.DialUDP("udp", nil, multiUdpAddr)
-	if err != nil {
-		println("Error #4 " + err.Error())
-		return err
-	}
-	defer multiUdpConn.Close()
-
-	// Start the servers
-	httpServer := &http.Server{
-		Addr:      addr,
-		TLSConfig: config,
-	}
-
-	// Start the multicast server
-	multiHttpServer := &http.Server{
-		Addr:      multiAddr,
-		TLSConfig: config,
-	}
-
-	quicServer := &Server{
-		UniCast:   httpServer,
-		MultiCast: multiHttpServer,
-	}
-
-	if handler == nil {
-		handler = http.DefaultServeMux
-	}
-	quicServer.UniCast.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		quicServer.SetQuicHeaders(w.Header())
-		handler.ServeHTTP(w, r)
-	})
-	quicServer.MultiCast.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		quicServer.SetQuicHeaders(w.Header())
-		handler.ServeHTTP(w, r)
-	})
-
-	hErr := make(chan error)
-	qErr := make(chan error)
-	go func() {
-		hErr <- httpServer.Serve(tlsConn)
-	}()
-	go func() {
-		qErr <- quicServer.Serve(udpConn)
-	}()
-	go func() {
-		//qErr <- quicServer.Serve(udpConn)
-		qErr <- quicServer.ServeMulti(udpConn, multiUdpConn)
-	}()
-
-	select {
-	case err := <-hErr:
-		quicServer.Close()
-		return err
-	case err := <-qErr:
-		// Cannot close the HTTP server or wait for requests to complete properly :/
-		return err
-	}
+	return s.Serve(conn)
 }

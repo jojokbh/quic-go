@@ -7,8 +7,8 @@ import (
 )
 
 type packetBuffer struct {
-	Data  []byte
-	Multi bool
+	Data []byte
+
 	// refCount counts how many packets Data is used in.
 	// It doesn't support concurrent use.
 	// It is > 1 when used for coalesced packet.
@@ -55,13 +55,8 @@ func (b *packetBuffer) Len() protocol.ByteCount {
 	return protocol.ByteCount(len(b.Data))
 }
 
-// Len returns the length of Data
-func (b *packetBuffer) SetMulti(value bool) {
-	b.Multi = value
-}
-
 func (b *packetBuffer) putBack() {
-	if cap(b.Data) != int(protocol.MaxReceivePacketSize) {
+	if cap(b.Data) != int(protocol.MaxPacketBufferSize) {
 		panic("putPacketBuffer called with packet of wrong size!")
 	}
 	bufferPool.Put(b)
@@ -69,10 +64,9 @@ func (b *packetBuffer) putBack() {
 
 var bufferPool sync.Pool
 
-func getPacketBuffer(multi bool) *packetBuffer {
+func getPacketBuffer() *packetBuffer {
 	buf := bufferPool.Get().(*packetBuffer)
 	buf.refCount = 1
-	buf.Multi = multi
 	buf.Data = buf.Data[:0]
 	return buf
 }
@@ -80,7 +74,7 @@ func getPacketBuffer(multi bool) *packetBuffer {
 func init() {
 	bufferPool.New = func() interface{} {
 		return &packetBuffer{
-			Data: make([]byte, 0, protocol.MaxReceivePacketSize),
+			Data: make([]byte, 0, protocol.MaxPacketBufferSize),
 		}
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math/rand"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/jojokbh/quic-go/internal/protocol"
@@ -16,13 +18,18 @@ import (
 type mockGenericStream struct {
 	num protocol.StreamNum
 
-	closed   bool
-	closeErr error
+	closed     bool
+	closeErr   error
+	sendWindow protocol.ByteCount
 }
 
 func (s *mockGenericStream) closeForShutdown(err error) {
 	s.closed = true
 	s.closeErr = err
+}
+
+func (s *mockGenericStream) updateSendWindow(limit protocol.ByteCount) {
+	s.sendWindow = limit
 }
 
 var _ = Describe("Streams Map (incoming)", func() {
@@ -37,7 +44,7 @@ var _ = Describe("Streams Map (incoming)", func() {
 	checkFrameSerialization := func(f wire.Frame) {
 		b := &bytes.Buffer{}
 		ExpectWithOffset(1, f.Write(b, protocol.VersionTLS)).To(Succeed())
-		frame, err := wire.NewFrameParser(protocol.VersionTLS).ParseNext(bytes.NewReader(b.Bytes()), protocol.Encryption1RTT)
+		frame, err := wire.NewFrameParser(false, protocol.VersionTLS).ParseNext(bytes.NewReader(b.Bytes()), protocol.Encryption1RTT)
 		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 		Expect(f).To(Equal(frame))
 	}
@@ -206,7 +213,7 @@ var _ = Describe("Streams Map (incoming)", func() {
 	It("errors when deleting a non-existing stream", func() {
 		err := m.DeleteStream(1337)
 		Expect(err).To(HaveOccurred())
-		Expect(err.(streamError).TestError()).To(MatchError("Tried to delete unknown incoming stream 1337"))
+		Expect(err.(streamError).TestError()).To(MatchError("tried to delete unknown incoming stream 1337"))
 	})
 
 	It("sends MAX_STREAMS frames when streams are deleted", func() {
@@ -255,6 +262,46 @@ var _ = Describe("Streams Map (incoming)", func() {
 			// at this point, we can't increase the stream limit any further, so no more MAX_STREAMS frames will be sent
 			Expect(m.DeleteStream(2)).To(Succeed())
 			Expect(m.DeleteStream(1)).To(Succeed())
+		})
+	})
+
+	Context("randomized tests", func() {
+		const num = 1000
+
+		BeforeEach(func() { maxNumStreams = num })
+
+		It("opens and accepts streams", func() {
+			rand.Seed(GinkgoRandomSeed())
+			ids := make([]protocol.StreamNum, num)
+			for i := 0; i < num; i++ {
+				ids[i] = protocol.StreamNum(i + 1)
+			}
+			rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
+
+			const timeout = 5 * time.Second
+			done := make(chan struct{}, 2)
+			go func() {
+				defer GinkgoRecover()
+				ctx, cancel := context.WithTimeout(context.Background(), timeout)
+				defer cancel()
+				for i := 0; i < num; i++ {
+					_, err := m.AcceptStream(ctx)
+					Expect(err).ToNot(HaveOccurred())
+				}
+				done <- struct{}{}
+			}()
+
+			go func() {
+				defer GinkgoRecover()
+				for i := 0; i < num; i++ {
+					_, err := m.GetOrOpenStream(ids[i])
+					Expect(err).ToNot(HaveOccurred())
+				}
+				done <- struct{}{}
+			}()
+
+			Eventually(done, timeout*3/2).Should(Receive())
+			Eventually(done, timeout*3/2).Should(Receive())
 		})
 	})
 })

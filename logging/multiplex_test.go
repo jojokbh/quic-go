@@ -1,6 +1,8 @@
 package logging
 
 import (
+	"context"
+	"errors"
 	"net"
 	"time"
 
@@ -35,35 +37,39 @@ var _ = Describe("Tracing", func() {
 			})
 
 			It("multiplexes the TracerForConnection call", func() {
-				tr1.EXPECT().TracerForConnection(PerspectiveClient, ConnectionID{1, 2, 3})
-				tr2.EXPECT().TracerForConnection(PerspectiveClient, ConnectionID{1, 2, 3})
-				tracer.TracerForConnection(PerspectiveClient, ConnectionID{1, 2, 3})
+				ctx := context.Background()
+				tr1.EXPECT().TracerForConnection(ctx, PerspectiveClient, ConnectionID{1, 2, 3})
+				tr2.EXPECT().TracerForConnection(ctx, PerspectiveClient, ConnectionID{1, 2, 3})
+				tracer.TracerForConnection(ctx, PerspectiveClient, ConnectionID{1, 2, 3})
 			})
 
 			It("uses multiple connection tracers", func() {
+				ctx := context.Background()
 				ctr1 := NewMockConnectionTracer(mockCtrl)
 				ctr2 := NewMockConnectionTracer(mockCtrl)
-				tr1.EXPECT().TracerForConnection(PerspectiveServer, ConnectionID{1, 2, 3}).Return(ctr1)
-				tr2.EXPECT().TracerForConnection(PerspectiveServer, ConnectionID{1, 2, 3}).Return(ctr2)
-				tr := tracer.TracerForConnection(PerspectiveServer, ConnectionID{1, 2, 3})
+				tr1.EXPECT().TracerForConnection(ctx, PerspectiveServer, ConnectionID{1, 2, 3}).Return(ctr1)
+				tr2.EXPECT().TracerForConnection(ctx, PerspectiveServer, ConnectionID{1, 2, 3}).Return(ctr2)
+				tr := tracer.TracerForConnection(ctx, PerspectiveServer, ConnectionID{1, 2, 3})
 				ctr1.EXPECT().LossTimerCanceled()
 				ctr2.EXPECT().LossTimerCanceled()
 				tr.LossTimerCanceled()
 			})
 
 			It("handles tracers that return a nil ConnectionTracer", func() {
+				ctx := context.Background()
 				ctr1 := NewMockConnectionTracer(mockCtrl)
-				tr1.EXPECT().TracerForConnection(PerspectiveServer, ConnectionID{1, 2, 3}).Return(ctr1)
-				tr2.EXPECT().TracerForConnection(PerspectiveServer, ConnectionID{1, 2, 3})
-				tr := tracer.TracerForConnection(PerspectiveServer, ConnectionID{1, 2, 3})
+				tr1.EXPECT().TracerForConnection(ctx, PerspectiveServer, ConnectionID{1, 2, 3}).Return(ctr1)
+				tr2.EXPECT().TracerForConnection(ctx, PerspectiveServer, ConnectionID{1, 2, 3})
+				tr := tracer.TracerForConnection(ctx, PerspectiveServer, ConnectionID{1, 2, 3})
 				ctr1.EXPECT().LossTimerCanceled()
 				tr.LossTimerCanceled()
 			})
 
 			It("returns nil when all tracers return a nil ConnectionTracer", func() {
-				tr1.EXPECT().TracerForConnection(PerspectiveClient, ConnectionID{1, 2, 3})
-				tr2.EXPECT().TracerForConnection(PerspectiveClient, ConnectionID{1, 2, 3})
-				Expect(tracer.TracerForConnection(PerspectiveClient, ConnectionID{1, 2, 3})).To(BeNil())
+				ctx := context.Background()
+				tr1.EXPECT().TracerForConnection(ctx, PerspectiveClient, ConnectionID{1, 2, 3})
+				tr2.EXPECT().TracerForConnection(ctx, PerspectiveClient, ConnectionID{1, 2, 3})
+				Expect(tracer.TracerForConnection(ctx, PerspectiveClient, ConnectionID{1, 2, 3})).To(BeNil())
 			})
 
 			It("traces the PacketSent event", func() {
@@ -94,22 +100,22 @@ var _ = Describe("Tracing", func() {
 		BeforeEach(func() {
 			tr1 = NewMockConnectionTracer(mockCtrl)
 			tr2 = NewMockConnectionTracer(mockCtrl)
-			tracer = newConnectionMultiplexer(tr1, tr2)
+			tracer = NewMultiplexedConnectionTracer(tr1, tr2)
 		})
 
 		It("trace the ConnectionStarted event", func() {
 			local := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4)}
 			remote := &net.UDPAddr{IP: net.IPv4(4, 3, 2, 1)}
-			tr1.EXPECT().StartedConnection(local, remote, VersionNumber(1234), ConnectionID{1, 2, 3, 4}, ConnectionID{4, 3, 2, 1})
-			tr2.EXPECT().StartedConnection(local, remote, VersionNumber(1234), ConnectionID{1, 2, 3, 4}, ConnectionID{4, 3, 2, 1})
-			tracer.StartedConnection(local, remote, VersionNumber(1234), ConnectionID{1, 2, 3, 4}, ConnectionID{4, 3, 2, 1})
+			tr1.EXPECT().StartedConnection(local, remote, ConnectionID{1, 2, 3, 4}, ConnectionID{4, 3, 2, 1})
+			tr2.EXPECT().StartedConnection(local, remote, ConnectionID{1, 2, 3, 4}, ConnectionID{4, 3, 2, 1})
+			tracer.StartedConnection(local, remote, ConnectionID{1, 2, 3, 4}, ConnectionID{4, 3, 2, 1})
 		})
 
 		It("traces the ClosedConnection event", func() {
-			reason := NewTimeoutCloseReason(TimeoutReasonIdle)
-			tr1.EXPECT().ClosedConnection(reason)
-			tr2.EXPECT().ClosedConnection(reason)
-			tracer.ClosedConnection(reason)
+			e := errors.New("test err")
+			tr1.EXPECT().ClosedConnection(e)
+			tr2.EXPECT().ClosedConnection(e)
+			tracer.ClosedConnection(e)
 		})
 
 		It("traces the SentTransportParameters event", func() {
@@ -124,6 +130,13 @@ var _ = Describe("Tracing", func() {
 			tr1.EXPECT().ReceivedTransportParameters(tp)
 			tr2.EXPECT().ReceivedTransportParameters(tp)
 			tracer.ReceivedTransportParameters(tp)
+		})
+
+		It("traces the RestoredTransportParameters event", func() {
+			tp := &wire.TransportParameters{InitialMaxData: 1337}
+			tr1.EXPECT().RestoredTransportParameters(tp)
+			tr2.EXPECT().RestoredTransportParameters(tp)
+			tracer.RestoredTransportParameters(tp)
 		})
 
 		It("traces the SentPacket event", func() {
@@ -183,6 +196,12 @@ var _ = Describe("Tracing", func() {
 			tracer.UpdatedMetrics(rttStats, 1337, 42, 13)
 		})
 
+		It("traces the AcknowledgedPacket event", func() {
+			tr1.EXPECT().AcknowledgedPacket(EncryptionHandshake, PacketNumber(42))
+			tr2.EXPECT().AcknowledgedPacket(EncryptionHandshake, PacketNumber(42))
+			tracer.AcknowledgedPacket(EncryptionHandshake, 42)
+		})
+
 		It("traces the LostPacket event", func() {
 			tr1.EXPECT().LostPacket(EncryptionHandshake, PacketNumber(42), PacketLossReorderingThreshold)
 			tr2.EXPECT().LostPacket(EncryptionHandshake, PacketNumber(42), PacketLossReorderingThreshold)
@@ -211,6 +230,12 @@ var _ = Describe("Tracing", func() {
 			tr1.EXPECT().DroppedEncryptionLevel(EncryptionHandshake)
 			tr2.EXPECT().DroppedEncryptionLevel(EncryptionHandshake)
 			tracer.DroppedEncryptionLevel(EncryptionHandshake)
+		})
+
+		It("traces the DroppedKey event", func() {
+			tr1.EXPECT().DroppedKey(KeyPhase(123))
+			tr2.EXPECT().DroppedKey(KeyPhase(123))
+			tracer.DroppedKey(123)
 		})
 
 		It("traces the SetLossTimer event", func() {

@@ -2,23 +2,18 @@
 
 <img src="docs/quic.png" width=303 height=124>
 
-[![Godoc Reference](https://img.shields.io/badge/godoc-reference-blue.svg?style=flat-square)](https://godoc.org/github.com/jojokbh/quic-go)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/jojokbh/quic-go)](https://pkg.go.dev/github.com/jojokbh/quic-go)
 [![Travis Build Status](https://img.shields.io/travis/jojokbh/quic-go/master.svg?style=flat-square&label=Travis+build)](https://travis-ci.org/jojokbh/quic-go)
 [![CircleCI Build Status](https://img.shields.io/circleci/project/github/jojokbh/quic-go.svg?style=flat-square&label=CircleCI+build)](https://circleci.com/gh/jojokbh/quic-go)
 [![Windows Build Status](https://img.shields.io/appveyor/ci/jojokbh/quic-go/master.svg?style=flat-square&label=windows+build)](https://ci.appveyor.com/project/jojokbh/quic-go/branch/master)
 [![Code Coverage](https://img.shields.io/codecov/c/github/jojokbh/quic-go/master.svg?style=flat-square)](https://codecov.io/gh/jojokbh/quic-go/)
 
-quic-go is an implementation of the [QUIC](https://en.wikipedia.org/wiki/QUIC) protocol in Go. It implements the [IETF QUIC draft-29](https://tools.ietf.org/html/draft-ietf-quic-transport-29).
-
-## Version compatibility
-
-Since quic-go is under active development, there's no guarantee that two builds of different commits are interoperable. The QUIC version used in the *master* branch is just a placeholder, and should not be considered stable.
-
-If you want to use quic-go as a library in other projects, please consider using a [tagged release](https://github.com/jojokbh/quic-go/releases). These releases expose [experimental QUIC versions](https://github.com/quicwg/base-drafts/wiki/QUIC-Versions), which are guaranteed to be stable.
+quic-go is an implementation of the [QUIC protocol, RFC 9000](https://datatracker.ietf.org/doc/html/rfc9000) protocol in Go.
+In addition to RFC 9000, it currently implements the [IETF QUIC draft-29](https://tools.ietf.org/html/draft-ietf-quic-transport-29). Support for draft-29 will eventually be dropped, as it is phased out of the ecosystem.
 
 ## Guides
 
-*We currently support Go 1.14+, with [Go modules](https://github.com/golang/go/wiki/Modules) support enabled.*
+*We currently support Go 1.16.x and Go 1.17.x.*
 
 Running tests:
 
@@ -52,8 +47,3 @@ http.Client{
 ## Contributing
 
 We are always happy to welcome new contributors! We have a number of self-contained issues that are suitable for first-time contributors, they are tagged with [help wanted](https://github.com/jojokbh/quic-go/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22). If you have any questions, please feel free to reach out by opening an issue or leaving a comment.
-
-
-### Note to self 
-
-Remove from send.conn time.Sleep(time.Microsecond * 10)

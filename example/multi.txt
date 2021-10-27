@@ -1,3 +1,0 @@
-[{1 65536 lo  up|loopback} {2 1500 eno1 1c:69:7a:61:dc:84 up|broadcast|multicast} {3 1500 wlp0s20f3 08:71:90:25:fd:55 broadcast|multicast}]
-&{2 1500 eno1 1c:69:7a:61:dc:84 up|broadcast|multicast}
-a 192.168.42.42:8081 m: 224.42.42.1:1235 

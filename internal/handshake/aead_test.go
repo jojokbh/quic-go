@@ -5,10 +5,10 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/tls"
 	"fmt"
 
 	"github.com/jojokbh/quic-go/internal/protocol"
-	"github.com/jojokbh/quic-go/internal/qtls"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -18,7 +18,7 @@ var _ = Describe("Long Header AEAD", func() {
 	for i := range cipherSuites {
 		cs := cipherSuites[i]
 
-		Context(fmt.Sprintf("using %s", qtls.CipherSuiteName(cs.ID)), func() {
+		Context(fmt.Sprintf("using %s", tls.CipherSuiteName(cs.ID)), func() {
 			getSealerAndOpener := func() (LongHeaderSealer, LongHeaderOpener) {
 				key := make([]byte, 16)
 				hpKey := make([]byte, 16)
@@ -57,6 +57,22 @@ var _ = Describe("Long Header AEAD", func() {
 					encrypted := sealer.Seal(nil, msg, 0x1337, ad)
 					_, err := opener.Open(nil, encrypted, 0x42, ad)
 					Expect(err).To(MatchError(ErrDecryptionFailed))
+				})
+
+				It("decodes the packet number", func() {
+					sealer, opener := getSealerAndOpener()
+					encrypted := sealer.Seal(nil, msg, 0x1337, ad)
+					_, err := opener.Open(nil, encrypted, 0x1337, ad)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(opener.DecodePacketNumber(0x38, protocol.PacketNumberLen1)).To(BeEquivalentTo(0x1338))
+				})
+
+				It("ignores packets it can't decrypt for packet number derivation", func() {
+					sealer, opener := getSealerAndOpener()
+					encrypted := sealer.Seal(nil, msg, 0x1337, ad)
+					_, err := opener.Open(nil, encrypted[:len(encrypted)-1], 0x1337, ad)
+					Expect(err).To(HaveOccurred())
+					Expect(opener.DecodePacketNumber(0x38, protocol.PacketNumberLen1)).To(BeEquivalentTo(0x38))
 				})
 			})
 

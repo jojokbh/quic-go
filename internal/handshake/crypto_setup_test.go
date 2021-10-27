@@ -1,6 +1,7 @@
 package handshake
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -21,6 +22,13 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
+
+var helloRetryRequestRandom = []byte{ // See RFC 8446, Section 4.1.3.
+	0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11,
+	0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
+	0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E,
+	0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C,
+}
 
 type chunk struct {
 	data     []byte
@@ -91,13 +99,17 @@ var _ = Describe("Crypto Setup TLS", func() {
 			&utils.RTTStats{},
 			nil,
 			utils.DefaultLogger.WithPrefix("server"),
+			protocol.VersionTLS,
 		)
 
 		done := make(chan struct{})
 		go func() {
 			defer GinkgoRecover()
 			server.RunHandshake()
-			Expect(sErrChan).To(Receive(MatchError("CRYPTO_ERROR: local error: tls: unexpected message")))
+			Expect(sErrChan).To(Receive(MatchError(&qerr.TransportError{
+				ErrorCode:    0x10a,
+				ErrorMessage: "local error: tls: unexpected message",
+			})))
 			close(done)
 		}()
 
@@ -131,6 +143,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 			&utils.RTTStats{},
 			nil,
 			utils.DefaultLogger.WithPrefix("server"),
+			protocol.VersionTLS,
 		)
 
 		done := make(chan struct{})
@@ -142,13 +155,10 @@ var _ = Describe("Crypto Setup TLS", func() {
 
 		fakeCH := append([]byte{byte(typeClientHello), 0, 0, 6}, []byte("foobar")...)
 		server.HandleMessage(fakeCH, protocol.EncryptionHandshake) // wrong encryption level
-		var err error
-		Expect(sErrChan).To(Receive(&err))
-		Expect(err).To(BeAssignableToTypeOf(&qerr.QuicError{}))
-		qerr := err.(*qerr.QuicError)
-		Expect(qerr.IsCryptoError()).To(BeTrue())
-		Expect(qerr.ErrorCode).To(BeEquivalentTo(0x100 + int(alertUnexpectedMessage)))
-		Expect(err.Error()).To(ContainSubstring("expected handshake message ClientHello to have encryption level Initial, has Handshake"))
+		Expect(sErrChan).To(Receive(MatchError(&qerr.TransportError{
+			ErrorCode:    0x100 + qerr.TransportErrorCode(alertUnexpectedMessage),
+			ErrorMessage: "expected handshake message ClientHello to have encryption level Initial, has Handshake",
+		})))
 
 		// make the go routine return
 		Expect(server.Close()).To(Succeed())
@@ -174,6 +184,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 			&utils.RTTStats{},
 			nil,
 			utils.DefaultLogger.WithPrefix("server"),
+			protocol.VersionTLS,
 		)
 
 		done := make(chan struct{})
@@ -182,10 +193,8 @@ var _ = Describe("Crypto Setup TLS", func() {
 			server.RunHandshake()
 			var err error
 			Expect(sErrChan).To(Receive(&err))
-			Expect(err).To(BeAssignableToTypeOf(&qerr.QuicError{}))
-			qerr := err.(*qerr.QuicError)
-			Expect(qerr.IsCryptoError()).To(BeTrue())
-			Expect(qerr.ErrorCode).To(BeEquivalentTo(0x100 + int(alertUnexpectedMessage)))
+			Expect(err).To(BeAssignableToTypeOf(&qerr.TransportError{}))
+			Expect(err.(*qerr.TransportError).ErrorCode).To(BeEquivalentTo(0x100 + int(alertUnexpectedMessage)))
 			close(done)
 		}()
 
@@ -210,6 +219,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 			&utils.RTTStats{},
 			nil,
 			utils.DefaultLogger.WithPrefix("server"),
+			protocol.VersionTLS,
 		)
 
 		done := make(chan struct{})
@@ -257,9 +267,27 @@ var _ = Describe("Crypto Setup TLS", func() {
 				for {
 					select {
 					case c := <-cChunkChan:
-						server.HandleMessage(c.data, c.encLevel)
+						msgType := messageType(c.data[0])
+						finished := server.HandleMessage(c.data, c.encLevel)
+						if msgType == typeFinished {
+							Expect(finished).To(BeTrue())
+						} else if msgType == typeClientHello {
+							// If this ClientHello didn't elicit a HelloRetryRequest, we're done with Initial keys.
+							_, err := server.GetHandshakeOpener()
+							Expect(finished).To(Equal(err == nil))
+						} else {
+							Expect(finished).To(BeFalse())
+						}
 					case c := <-sChunkChan:
-						client.HandleMessage(c.data, c.encLevel)
+						msgType := messageType(c.data[0])
+						finished := client.HandleMessage(c.data, c.encLevel)
+						if msgType == typeFinished {
+							Expect(finished).To(BeTrue())
+						} else if msgType == typeServerHello {
+							Expect(finished).To(Equal(!bytes.Equal(c.data[6:6+32], helloRetryRequestRandom)))
+						} else {
+							Expect(finished).To(BeFalse())
+						}
 					case <-done: // handshake complete
 						return
 					}
@@ -308,6 +336,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 				clientRTTStats,
 				nil,
 				utils.DefaultLogger.WithPrefix("client"),
+				protocol.VersionTLS,
 			)
 
 			var sHandshakeComplete bool
@@ -334,6 +363,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 				serverRTTStats,
 				nil,
 				utils.DefaultLogger.WithPrefix("server"),
+				protocol.VersionTLS,
 			)
 
 			handshake(client, cChunkChan, server, sChunkChan)
@@ -403,6 +433,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 				&utils.RTTStats{},
 				nil,
 				utils.DefaultLogger.WithPrefix("client"),
+				protocol.VersionTLS,
 			)
 
 			done := make(chan struct{})
@@ -445,6 +476,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 				&utils.RTTStats{},
 				nil,
 				utils.DefaultLogger.WithPrefix("client"),
+				protocol.VersionTLS,
 			)
 
 			sChunkChan, sInitialStream, sHandshakeStream := initStreams()
@@ -469,6 +501,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 				&utils.RTTStats{},
 				nil,
 				utils.DefaultLogger.WithPrefix("server"),
+				protocol.VersionTLS,
 			)
 
 			done := make(chan struct{})
@@ -502,6 +535,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 					&utils.RTTStats{},
 					nil,
 					utils.DefaultLogger.WithPrefix("client"),
+					protocol.VersionTLS,
 				)
 
 				sChunkChan, sInitialStream, sHandshakeStream := initStreams()
@@ -522,6 +556,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 					&utils.RTTStats{},
 					nil,
 					utils.DefaultLogger.WithPrefix("server"),
+					protocol.VersionTLS,
 				)
 
 				done := make(chan struct{})
@@ -533,12 +568,9 @@ var _ = Describe("Crypto Setup TLS", func() {
 				Eventually(done).Should(BeClosed())
 
 				// inject an invalid session ticket
-				cRunner.EXPECT().OnError(gomock.Any()).Do(func(err error) {
-					Expect(err).To(BeAssignableToTypeOf(&qerr.QuicError{}))
-					qerr := err.(*qerr.QuicError)
-					Expect(qerr.IsCryptoError()).To(BeTrue())
-					Expect(qerr.ErrorCode).To(BeEquivalentTo(0x100 + int(alertUnexpectedMessage)))
-					Expect(qerr.Error()).To(ContainSubstring("expected handshake message NewSessionTicket to have encryption level 1-RTT, has Handshake"))
+				cRunner.EXPECT().OnError(&qerr.TransportError{
+					ErrorCode:    0x100 + qerr.TransportErrorCode(alertUnexpectedMessage),
+					ErrorMessage: "expected handshake message NewSessionTicket to have encryption level 1-RTT, has Handshake",
 				})
 				b := append([]byte{uint8(typeNewSessionTicket), 0, 0, 6}, []byte("foobar")...)
 				client.HandleMessage(b, protocol.EncryptionHandshake)
@@ -562,6 +594,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 					&utils.RTTStats{},
 					nil,
 					utils.DefaultLogger.WithPrefix("client"),
+					protocol.VersionTLS,
 				)
 
 				sChunkChan, sInitialStream, sHandshakeStream := initStreams()
@@ -582,6 +615,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 					&utils.RTTStats{},
 					nil,
 					utils.DefaultLogger.WithPrefix("server"),
+					protocol.VersionTLS,
 				)
 
 				done := make(chan struct{})
@@ -594,9 +628,8 @@ var _ = Describe("Crypto Setup TLS", func() {
 
 				// inject an invalid session ticket
 				cRunner.EXPECT().OnError(gomock.Any()).Do(func(err error) {
-					Expect(err).To(BeAssignableToTypeOf(&qerr.QuicError{}))
-					qerr := err.(*qerr.QuicError)
-					Expect(qerr.IsCryptoError()).To(BeTrue())
+					Expect(err).To(BeAssignableToTypeOf(&qerr.TransportError{}))
+					Expect(err.(*qerr.TransportError).ErrorCode.IsCryptoError()).To(BeTrue())
 				})
 				b := append([]byte{uint8(typeNewSessionTicket), 0, 0, 6}, []byte("foobar")...)
 				client.HandleMessage(b, protocol.Encryption1RTT)
@@ -737,7 +770,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 				Expect(client.ConnectionState().Used0RTT).To(BeTrue())
 			})
 
-			It("rejects 0-RTT, whent the transport parameters changed", func() {
+			It("rejects 0-RTT, when the transport parameters changed", func() {
 				csc := mocktls.NewMockClientSessionCache(mockCtrl)
 				var state *tls.ClientSessionState
 				receivedSessionTicket := make(chan struct{})
@@ -771,7 +804,7 @@ var _ = Describe("Crypto Setup TLS", func() {
 				clientHelloWrittenChan, client, clientErr, server, serverErr = handshakeWithTLSConf(
 					clientConf, serverConf,
 					clientRTTStats, &utils.RTTStats{},
-					&wire.TransportParameters{}, &wire.TransportParameters{InitialMaxData: initialMaxData + 1},
+					&wire.TransportParameters{}, &wire.TransportParameters{InitialMaxData: initialMaxData - 1},
 					true,
 				)
 				Expect(clientErr).ToNot(HaveOccurred())

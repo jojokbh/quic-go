@@ -2,7 +2,9 @@ package quic
 
 import (
 	"github.com/jojokbh/quic-go/internal/protocol"
+	"github.com/jojokbh/quic-go/internal/qerr"
 	"github.com/jojokbh/quic-go/internal/wire"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -12,7 +14,6 @@ var _ = Describe("Connection ID Manager", func() {
 		m             *connIDManager
 		frameQueue    []wire.Frame
 		tokenAdded    *protocol.StatelessResetToken
-		retiredTokens []protocol.StatelessResetToken
 		removedTokens []protocol.StatelessResetToken
 	)
 	initialConnID := protocol.ConnectionID{0, 0, 0, 0}
@@ -20,13 +21,11 @@ var _ = Describe("Connection ID Manager", func() {
 	BeforeEach(func() {
 		frameQueue = nil
 		tokenAdded = nil
-		retiredTokens = nil
 		removedTokens = nil
 		m = newConnIDManager(
 			initialConnID,
 			func(token protocol.StatelessResetToken) { tokenAdded = &token },
 			func(token protocol.StatelessResetToken) { removedTokens = append(removedTokens, token) },
-			func(token protocol.StatelessResetToken) { retiredTokens = append(retiredTokens, token) },
 			func(f wire.Frame,
 			) {
 				frameQueue = append(frameQueue, f)
@@ -104,6 +103,7 @@ var _ = Describe("Connection ID Manager", func() {
 			ConnectionID:        protocol.ConnectionID{1, 2, 3, 4},
 			StatelessResetToken: protocol.StatelessResetToken{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc, 0xd, 0xe},
 		}
+		m.SetHandshakeComplete()
 		Expect(m.Add(f)).To(Succeed())
 		Expect(m.Get()).To(Equal(protocol.ConnectionID{1, 2, 3, 4}))
 		c, _ := get()
@@ -206,6 +206,7 @@ var _ = Describe("Connection ID Manager", func() {
 			SequenceNumber: 1,
 			ConnectionID:   connID,
 		})).To(Succeed())
+		m.SetHandshakeComplete()
 		Expect(frameQueue).To(BeEmpty())
 		Expect(m.Get()).To(Equal(connID))
 		Expect(frameQueue).To(HaveLen(1))
@@ -232,18 +233,30 @@ var _ = Describe("Connection ID Manager", func() {
 			SequenceNumber:      uint64(9999),
 			ConnectionID:        protocol.ConnectionID{1, 2, 3, 4},
 			StatelessResetToken: protocol.StatelessResetToken{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
-		})).To(MatchError("CONNECTION_ID_LIMIT_ERROR"))
+		})).To(MatchError(&qerr.TransportError{ErrorCode: qerr.ConnectionIDLimitError}))
 	})
 
 	It("initiates the first connection ID update as soon as possible", func() {
 		Expect(m.Get()).To(Equal(initialConnID))
+		m.SetHandshakeComplete()
 		Expect(m.Add(&wire.NewConnectionIDFrame{
 			SequenceNumber:      1,
 			ConnectionID:        protocol.ConnectionID{1, 2, 3, 4},
 			StatelessResetToken: protocol.StatelessResetToken{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1},
 		})).To(Succeed())
 		Expect(m.Get()).To(Equal(protocol.ConnectionID{1, 2, 3, 4}))
+	})
 
+	It("waits until handshake completion before initiating a connection ID update", func() {
+		Expect(m.Get()).To(Equal(initialConnID))
+		Expect(m.Add(&wire.NewConnectionIDFrame{
+			SequenceNumber:      1,
+			ConnectionID:        protocol.ConnectionID{1, 2, 3, 4},
+			StatelessResetToken: protocol.StatelessResetToken{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1},
+		})).To(Succeed())
+		Expect(m.Get()).To(Equal(initialConnID))
+		m.SetHandshakeComplete()
+		Expect(m.Get()).To(Equal(protocol.ConnectionID{1, 2, 3, 4}))
 	})
 
 	It("initiates subsequent updates when enough packets are sent", func() {
@@ -256,6 +269,7 @@ var _ = Describe("Connection ID Manager", func() {
 			})).To(Succeed())
 		}
 
+		m.SetHandshakeComplete()
 		lastConnID := m.Get()
 		Expect(lastConnID).To(Equal(protocol.ConnectionID{1, 1, 1, 1}))
 
@@ -267,8 +281,8 @@ var _ = Describe("Connection ID Manager", func() {
 			if !connID.Equal(lastConnID) {
 				counter++
 				lastConnID = connID
-				Expect(retiredTokens).To(HaveLen(1))
-				retiredTokens = nil
+				Expect(removedTokens).To(HaveLen(1))
+				removedTokens = nil
 				Expect(m.Add(&wire.NewConnectionIDFrame{
 					SequenceNumber:      uint64(s),
 					ConnectionID:        protocol.ConnectionID{s, s, s, s},
@@ -288,6 +302,7 @@ var _ = Describe("Connection ID Manager", func() {
 				StatelessResetToken: protocol.StatelessResetToken{s, s, s, s, s, s, s, s, s, s, s, s, s, s, s, s},
 			})).To(Succeed())
 		}
+		m.SetHandshakeComplete()
 		Expect(m.Get()).To(Equal(protocol.ConnectionID{10, 10, 10, 10}))
 		for {
 			m.SentPacket()
@@ -317,6 +332,7 @@ var _ = Describe("Connection ID Manager", func() {
 				StatelessResetToken: protocol.StatelessResetToken{i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i},
 			})).To(Succeed())
 		}
+		m.SetHandshakeComplete()
 		Expect(m.Get()).To(Equal(protocol.ConnectionID{1, 1, 1, 1}))
 		for i := 0; i < 2*protocol.PacketsPerConnectionID; i++ {
 			m.SentPacket()
@@ -327,22 +343,21 @@ var _ = Describe("Connection ID Manager", func() {
 			ConnectionID:   protocol.ConnectionID{1, 3, 3, 7},
 		})).To(Succeed())
 		Expect(m.Get()).To(Equal(protocol.ConnectionID{2, 2, 2, 2}))
-		Expect(retiredTokens).To(HaveLen(1))
-		Expect(retiredTokens[0]).To(Equal(protocol.StatelessResetToken{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}))
+		Expect(removedTokens).To(HaveLen(1))
+		Expect(removedTokens[0]).To(Equal(protocol.StatelessResetToken{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}))
 	})
 
 	It("removes the currently active stateless reset token when it is closed", func() {
 		m.Close()
-		Expect(retiredTokens).To(BeEmpty())
 		Expect(removedTokens).To(BeEmpty())
 		Expect(m.Add(&wire.NewConnectionIDFrame{
 			SequenceNumber:      1,
 			ConnectionID:        protocol.ConnectionID{1, 2, 3, 4},
 			StatelessResetToken: protocol.StatelessResetToken{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1},
 		})).To(Succeed())
+		m.SetHandshakeComplete()
 		Expect(m.Get()).To(Equal(protocol.ConnectionID{1, 2, 3, 4}))
 		m.Close()
-		Expect(retiredTokens).To(BeEmpty())
 		Expect(removedTokens).To(HaveLen(1))
 		Expect(removedTokens[0]).To(Equal(protocol.StatelessResetToken{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}))
 	})

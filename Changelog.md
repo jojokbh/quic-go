@@ -1,50 +1,23 @@
 # Changelog
 
-## v0.20.5 (2021-05-11)
-Higher speed
+## v0.22.0 (2021-07-25)
 
-## v0.20.4 (2021-05-11)
-Error handling
+- Use `ReadBatch` to read multiple UDP packets from the socket with a single syscall
+- Add a config option (`Config.DisableVersionNegotiationPackets`) to disable sending of Version Negotiation packets
+- Drop support for QUIC draft versions 32 and 34
+- Remove the `RetireBugBackwardsCompatibilityMode`, which was intended to mitigate a bug when retiring connection IDs in quic-go in v0.17.2 and ealier
 
-## v0.20.3 (2021-05-11)
+## v0.21.2 (2021-07-15)
 
-## v0.20.2 (2021-05-11)
-Updated tls
+- Update qtls (for Go 1.15, 1.16 and 1.17rc1) to include the fix for the crypto/tls panic (see https://groups.google.com/g/golang-dev/c/5LJ2V7rd-Ag/m/YGLHVBZ6AAAJ for details)
 
-## v0.20.1 (2021-05-11)
-ListenAndServeTLSMultiFolder2
+## v0.21.0 (2021-06-01)
 
-## v0.20.0 (2021-05-11)
-ListenAndServeTLSMultiFolder
+- quic-go now supports RFC 9000!
 
-## v0.19.8 (2021-05-11)
-Fix client header err
-Unencrypted on multicast
+## v0.20.0 (2021-03-19)
 
-## v0.19.7 (2021-04-27)
-Unencrypted on multicast
-
-## v0.19.6 (2021-04-27)
-Unencrypted on multicast
-
-## v0.19.5 (2021-04-27)
-Unencrypted on multicast
-
-## v0.19.0 (2021-04-08)
-
-## v0.18.9 (2021-03-18)
-
-## v0.18.8 (2021-03-18)
-
-## v0.18.7 (2021-03-18)
-
-## v0.18.6
-
-## v0.18.5
-
-## v0.18.1 (2020-06-20)
-
-- Added multicast support
+- Remove the `quic.Config.HandshakeTimeout`. Introduce a `quic.Config.HandshakeIdleTimeout`.
 
 ## v0.17.1 (2020-06-20)
 

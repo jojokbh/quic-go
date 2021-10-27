@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/jojokbh/quic-go/internal/protocol"
+	"github.com/jojokbh/quic-go/internal/qerr"
 	"github.com/jojokbh/quic-go/internal/wire"
 
 	. "github.com/onsi/ginkgo"
@@ -41,6 +42,7 @@ var _ = Describe("Connection ID Generator", func() {
 			func(c protocol.ConnectionID) { retiredConnIDs = append(retiredConnIDs, c) },
 			func(c protocol.ConnectionID, h packetHandler) { replacedWithClosed[string(c)] = h },
 			func(f wire.Frame) { queuedFrames = append(queuedFrames, f) },
+			protocol.VersionDraft29,
 		)
 	})
 
@@ -62,15 +64,6 @@ var _ = Describe("Connection ID Generator", func() {
 		}
 	})
 
-	It("doesn't issue new connection IDs in RetireBugBackwardsCompatibilityMode", func() {
-		RetireBugBackwardsCompatibilityMode = true
-		defer func() { RetireBugBackwardsCompatibilityMode = false }()
-
-		Expect(g.SetMaxActiveConnIDs(4)).To(Succeed())
-		Expect(retiredConnIDs).To(BeEmpty())
-		Expect(addedConnIDs).To(BeEmpty())
-	})
-
 	It("limits the number of connection IDs that it issues", func() {
 		Expect(g.SetMaxActiveConnIDs(9999999)).To(Succeed())
 		Expect(retiredConnIDs).To(BeEmpty())
@@ -78,8 +71,42 @@ var _ = Describe("Connection ID Generator", func() {
 		Expect(queuedFrames).To(HaveLen(protocol.MaxIssuedConnectionIDs - 1))
 	})
 
+	// SetMaxActiveConnIDs is called twice when we dialing a 0-RTT connection:
+	// once for the restored from the old connections, once when we receive the transport parameters
+	Context("dealing with 0-RTT", func() {
+		It("doesn't issue new connection IDs when SetMaxActiveConnIDs is called with the same value", func() {
+			Expect(g.SetMaxActiveConnIDs(4)).To(Succeed())
+			Expect(queuedFrames).To(HaveLen(3))
+			queuedFrames = nil
+			Expect(g.SetMaxActiveConnIDs(4)).To(Succeed())
+			Expect(queuedFrames).To(BeEmpty())
+		})
+
+		It("issues more connection IDs if the server allows a higher limit on the resumed connection", func() {
+			Expect(g.SetMaxActiveConnIDs(3)).To(Succeed())
+			Expect(queuedFrames).To(HaveLen(2))
+			queuedFrames = nil
+			Expect(g.SetMaxActiveConnIDs(6)).To(Succeed())
+			Expect(queuedFrames).To(HaveLen(3))
+		})
+
+		It("issues more connection IDs if the server allows a higher limit on the resumed connection, when connection IDs were retired in between", func() {
+			Expect(g.SetMaxActiveConnIDs(3)).To(Succeed())
+			Expect(queuedFrames).To(HaveLen(2))
+			queuedFrames = nil
+			g.Retire(1, protocol.ConnectionID{})
+			Expect(queuedFrames).To(HaveLen(1))
+			queuedFrames = nil
+			Expect(g.SetMaxActiveConnIDs(6)).To(Succeed())
+			Expect(queuedFrames).To(HaveLen(3))
+		})
+	})
+
 	It("errors if the peers tries to retire a connection ID that wasn't yet issued", func() {
-		Expect(g.Retire(1, protocol.ConnectionID{})).To(MatchError("PROTOCOL_VIOLATION: tried to retire connection ID 1. Highest issued: 0"))
+		Expect(g.Retire(1, protocol.ConnectionID{})).To(MatchError(&qerr.TransportError{
+			ErrorCode:    qerr.ProtocolViolation,
+			ErrorMessage: "retired connection ID 1 (highest issued: 0)",
+		}))
 	})
 
 	It("errors if the peers tries to retire a connection ID in a packet with that connection ID", func() {
@@ -87,19 +114,10 @@ var _ = Describe("Connection ID Generator", func() {
 		Expect(queuedFrames).ToNot(BeEmpty())
 		Expect(queuedFrames[0]).To(BeAssignableToTypeOf(&wire.NewConnectionIDFrame{}))
 		f := queuedFrames[0].(*wire.NewConnectionIDFrame)
-		Expect(g.Retire(f.SequenceNumber, f.ConnectionID)).To(MatchError(fmt.Sprintf("PROTOCOL_VIOLATION: tried to retire connection ID %d (%s), which was used as the Destination Connection ID on this packet", f.SequenceNumber, f.ConnectionID)))
-	})
-
-	It("doesn't error if the peers tries to retire a connection ID in a packet with that connection ID in RetireBugBackwardsCompatibilityMode", func() {
-		Expect(g.SetMaxActiveConnIDs(4)).To(Succeed())
-		Expect(queuedFrames).ToNot(BeEmpty())
-		Expect(queuedFrames[0]).To(BeAssignableToTypeOf(&wire.NewConnectionIDFrame{}))
-
-		RetireBugBackwardsCompatibilityMode = true
-		defer func() { RetireBugBackwardsCompatibilityMode = false }()
-
-		f := queuedFrames[0].(*wire.NewConnectionIDFrame)
-		Expect(g.Retire(f.SequenceNumber, f.ConnectionID)).To(Succeed())
+		Expect(g.Retire(f.SequenceNumber, f.ConnectionID)).To(MatchError(&qerr.TransportError{
+			ErrorCode:    qerr.ProtocolViolation,
+			ErrorMessage: fmt.Sprintf("retired connection ID %d (%s), which was used as the Destination Connection ID on this packet", f.SequenceNumber, f.ConnectionID),
+		}))
 	})
 
 	It("issues new connection IDs, when old ones are retired", func() {

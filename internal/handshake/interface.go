@@ -3,6 +3,7 @@ package handshake
 import (
 	"errors"
 	"io"
+	"net"
 	"time"
 
 	"github.com/jojokbh/quic-go/internal/protocol"
@@ -27,26 +28,25 @@ type ConnectionState = qtls.ConnectionState
 
 type headerDecryptor interface {
 	DecryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
-	MultiDecryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
 }
 
 // LongHeaderOpener opens a long header packet
 type LongHeaderOpener interface {
 	headerDecryptor
+	DecodePacketNumber(wirePN protocol.PacketNumber, wirePNLen protocol.PacketNumberLen) protocol.PacketNumber
 	Open(dst, src []byte, pn protocol.PacketNumber, associatedData []byte) ([]byte, error)
 }
 
 // ShortHeaderOpener opens a short header packet
 type ShortHeaderOpener interface {
 	headerDecryptor
+	DecodePacketNumber(wirePN protocol.PacketNumber, wirePNLen protocol.PacketNumberLen) protocol.PacketNumber
 	Open(dst, src []byte, rcvTime time.Time, pn protocol.PacketNumber, kp protocol.KeyPhaseBit, associatedData []byte) ([]byte, error)
 }
 
 // LongHeaderSealer seals a long header packet
 type LongHeaderSealer interface {
 	Seal(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) []byte
-	MultiSeal(dst, src []byte, packetNumber protocol.PacketNumber, associatedData []byte) []byte
-	MultiEncryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
 	EncryptHeader(sample []byte, firstByte *byte, pnBytes []byte)
 	Overhead() int
 }
@@ -79,18 +79,24 @@ type CryptoSetup interface {
 	GetSessionTicket() ([]byte, error)
 
 	HandleMessage([]byte, protocol.EncryptionLevel) bool
-	SetLargest1RTTAcked(protocol.PacketNumber)
-	DropHandshakeKeys()
+	SetLargest1RTTAcked(protocol.PacketNumber) error
+	SetHandshakeConfirmed()
 	ConnectionState() ConnectionState
 
 	GetInitialOpener() (LongHeaderOpener, error)
 	GetHandshakeOpener() (LongHeaderOpener, error)
 	Get0RTTOpener() (LongHeaderOpener, error)
 	Get1RTTOpener() (ShortHeaderOpener, error)
-	GetMultiOpener() (ShortHeaderOpener, error)
 
 	GetInitialSealer() (LongHeaderSealer, error)
 	GetHandshakeSealer() (LongHeaderSealer, error)
 	Get0RTTSealer() (LongHeaderSealer, error)
 	Get1RTTSealer() (ShortHeaderSealer, error)
+}
+
+// ConnWithVersion is the connection used in the ClientHelloInfo.
+// It can be used to determine the QUIC version in use.
+type ConnWithVersion interface {
+	net.Conn
+	GetQUICVersion() protocol.VersionNumber
 }
