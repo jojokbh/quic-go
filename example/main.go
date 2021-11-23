@@ -53,6 +53,7 @@ func generatePRData(l int) []byte {
 	return res
 }
 
+//Standard setup handler
 func setupHandler(www string) http.Handler {
 	mux := http.NewServeMux()
 

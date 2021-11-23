@@ -128,6 +128,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 	totalMultiPackets := 0
 	now := time.Now()
 	bs := make([]byte, 2)
+	burstyLimiter := make(chan time.Time, 3)
 
 	totalPackets += 1
 	packetNumber += 1
@@ -185,7 +186,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 		}
 
 		bw.Flush()
-		multicaster := &Multicaster{bw, bs, packetNumber, 0}
+		multicaster := &Multicaster{bw, bs, packetNumber, 0, burstyLimiter}
 		m, err = copyBuffer(multicaster, fileStat, buf)
 		if err != nil {
 			log.Fatal(err)
@@ -268,7 +269,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 		}
 		bw.Flush()
 
-		multicaster := &Multicaster{bw, bs, packetNumber, 0}
+		multicaster := &Multicaster{bw, bs, packetNumber, 0, burstyLimiter}
 		m, err = copyBuffer(multicaster, res.Body, buf)
 		if err != nil {
 			log.Fatal(err)
@@ -314,10 +315,11 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 }
 
 type Multicaster struct {
-	Pass      *bufio.Writer
-	PacketBuf []byte
-	Packet    uint16
-	rate      float64
+	Pass          *bufio.Writer
+	PacketBuf     []byte
+	Packet        uint16
+	rate          float64
+	burstyLimiter chan time.Time
 }
 
 func (m *Multicaster) Write(p []byte) (int, error) {
@@ -339,7 +341,9 @@ func (m *Multicaster) Write(p []byte) (int, error) {
 	m.Pass.Flush()
 	totaltime := time.Now().Sub(start)
 	m.rate = (float64(n) / totaltime.Seconds()) / math.Pow(10, 6)
-	time.Sleep(time.Microsecond * time.Duration(m.rate))
+	if m.rate > 50 {
+		time.Sleep(time.Microsecond * 10)
+	}
 
 	return n, err
 }
