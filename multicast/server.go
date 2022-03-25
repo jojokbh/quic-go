@@ -393,6 +393,182 @@ func (s *MulticastServer) ListenAndServeTLSMultiFolder(certFile, keyFile, addr, 
 	}
 }
 
+// ListenAndServeTLS listens on the UDP address s.Addr and calls s.Handler to handle HTTP/3 requests on incoming connections.
+func (s *MulticastServer) ListenAndServeTLSKencastFolder(certFile, keyFile, addr, multiACKAddr string, kencastWriter *net.UDPConn, ifat *net.Interface, handler http.Handler, files chan string) error {
+	var err error
+
+	// Load certs
+	certs := make([]tls.Certificate, 1)
+	certs[0], err = tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return err
+	}
+	// We currently only use the cert-related stuff from tls.Config,
+	// so we don't need to make a full copy.
+	config := &tls.Config{
+		Certificates: certs,
+	}
+
+	s.ifat = ifat
+
+	mUdpConn := kencastWriter
+	if err != nil {
+		return err
+	}
+	defer mUdpConn.Close()
+
+	s.multiAddr = "224.42.42.1:1235"
+
+	// Open the listeners
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return err
+	}
+
+	udpConn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return err
+	}
+	defer udpConn.Close()
+	// Open the listeners
+	multiACKudpAddr, err := net.ResolveUDPAddr("udp", multiACKAddr)
+	if err != nil {
+		return err
+	}
+	multiACKudpConn, err := net.ListenUDP("udp", multiACKudpAddr)
+	if err != nil {
+		return err
+	}
+	defer multiACKudpConn.Close()
+
+	readUDP := make(chan []byte)
+	writeUDP := make(chan []byte)
+
+	uConn := ConnPassTrough{
+		udpConn,
+		writeUDP,
+		readUDP,
+	}
+	if false {
+		fmt.Print(uConn)
+	}
+
+	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		return err
+	}
+	tcpConn, err := net.ListenTCP("tcp", tcpAddr)
+	if err != nil {
+		return err
+	}
+	defer tcpConn.Close()
+
+	tlsConn := tls.NewListener(tcpConn, config)
+	defer tlsConn.Close()
+
+	// Start the servers
+	httpServer := &http.Server{
+		Addr:      addr,
+		TLSConfig: config,
+	}
+	// Start the servers
+	multihttpServer := &http.Server{
+		Addr:      multiACKAddr,
+		TLSConfig: config,
+	}
+
+	quicServer := &http3.Server{
+		Server: httpServer,
+	}
+
+	multiACKquicServer := &http3.Server{
+		Server: multihttpServer,
+	}
+
+	multicastServer := &MulticastServer{
+		Server:    quicServer,
+		Multicast: httpServer,
+	}
+
+	if handler == nil {
+		handler = http.DefaultServeMux
+	}
+	httpServer.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		quicServer.SetQuicHeaders(w.Header())
+		w.Header().Add("multicast-ack", multiACKAddr)
+		w.Header().Add("multicast", "kencast")
+		handler.ServeHTTP(w, r)
+	})
+	multiACKquicServer.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		quicServer.SetQuicHeaders(w.Header())
+		w.Header().Add("multicast-ack", multiACKAddr)
+		w.Header().Add("multicast", "kencast")
+		handler.ServeHTTP(w, r)
+	})
+
+	hErr := make(chan error)
+	qErr := make(chan error)
+	mErr := make(chan error)
+	aErr := make(chan error)
+	go func() {
+		hErr <- httpServer.Serve(tlsConn)
+	}()
+	go func() {
+		qErr <- quicServer.Serve(udpConn)
+	}()
+	go func() {
+		//	aErr <- multiACKquicServer.ListenACK(multiACKudpConn)
+	}()
+	go func() {
+		mErr <- multicastServer.ServeFolder(kencastWriter, multiACKudpConn, files)
+	}()
+
+	go func() {
+		select {
+		case b := <-readUDP:
+			fmt.Println(b)
+		case b := <-writeUDP:
+			fmt.Println(b)
+		}
+	}()
+
+	s.rttStats = &utils.RTTStats{}
+	s.RetransmissionQueue = quic.NewRetransmissionQueue(s.version)
+
+	s.sentPacketHandler, s.receivedPacketHandler = ackhandler.NewAckHandler(
+		0,
+		getMaxPacketSize(kencastWriter.LocalAddr()),
+		s.rttStats,
+		s.perspective,
+		s.tracer,
+		s.logger,
+		s.version,
+	)
+
+	select {
+	case err := <-hErr:
+		quicServer.Close()
+		multicastServer.Close()
+		multiACKquicServer.Close()
+		return err
+	case err := <-qErr:
+		multicastServer.Close()
+		multiACKquicServer.Close()
+		// Cannot close the HTTP server or wait for requests to complete properly :/
+		return err
+	case err := <-mErr:
+		quicServer.Close()
+		multiACKquicServer.Close()
+		// Cannot close the HTTP server or wait for requests to complete properly :/
+		return err
+	case err := <-aErr:
+		quicServer.Close()
+		multicastServer.Close()
+		// Cannot close the HTTP server or wait for requests to complete properly :/
+		return err
+	}
+}
+
 func (u ConnPassTrough) Write(b []byte) (int, error) {
 	u.DataWriteStream <- b
 

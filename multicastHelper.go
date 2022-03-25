@@ -26,6 +26,7 @@ import (
 	"github.com/jojokbh/quic-go/internal/utils"
 	"github.com/jojokbh/quic-go/internal/wire"
 	"github.com/jojokbh/quic-go/logging"
+	"github.com/juju/ratelimit"
 )
 
 const (
@@ -46,7 +47,12 @@ type ConnPassTrough struct {
 	DataReadStream  chan []byte
 }
 
+type byteBuffer struct {
+	buf []byte
+}
+
 var pt *PassThru
+var bucket *ratelimit.Bucket
 
 func MultiCast(files chan string, conn *net.UDPConn, hclient *http.Client, addr net.Addr) {
 	//s.logger.Infof("Started multicast: ")
@@ -55,13 +61,22 @@ func MultiCast(files chan string, conn *net.UDPConn, hclient *http.Client, addr 
 
 	totalPackets = 0
 	packetNumber = 0
-	packetHistory := make(map[uint16][]byte)
+	packetHistory := make(map[uint16]string)
 	var mu sync.Mutex
 	conn.SetWriteBuffer(1436)
+	bucket = ratelimit.NewBucketWithRate(700*1024, 700*1024)
+
+	io := ratelimit.Writer(conn, bucket)
+	reader := ratelimit.Reader(conn, bucket)
+	bucket.Available()
 	pt = &PassThru{}
-	pt.UDPConn = conn
+	pt.Writer = io
+	pt.Reader = reader
 	pt.Packet = 0
 	pt.PacketHistory = packetHistory
+	buf := make([]byte, 1439)
+	buf[0] = 0x37
+	//lastWrite := time.Now()
 
 	bw := bufio.NewWriter(pt)
 	for {
@@ -70,6 +85,7 @@ func MultiCast(files chan string, conn *net.UDPConn, hclient *http.Client, addr 
 			mu.Lock()
 			now := time.Now()
 			success := getTest(file, bw, hclient, addr)
+			//lastWrite = time.Now()
 			mu.Unlock()
 			if !success {
 				fmt.Println("Big fail " + file)
@@ -77,6 +93,15 @@ func MultiCast(files chan string, conn *net.UDPConn, hclient *http.Client, addr 
 			fmt.Println("Got file ", file, " in ", time.Now().Sub(now))
 
 		default:
+			//bw.Write(buf)
+			//time.Sleep(time.Millisecond * 4)
+			/*
+				if time.Since(lastWrite) > time.Second {
+					bw.Write(buf)
+					fmt.Println("White noise")
+					time.Sleep(time.Millisecond * 3)
+				}
+			*/
 		}
 
 	}
@@ -142,18 +167,19 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 
 		fileStat, err := os.Open(file)
 		if err != nil {
-
+			panic(err)
 		}
 		info, err := fileStat.Stat()
 		if err != nil {
-
+			panic(err)
 		}
 		filesize = info.Size()
 
-		split := strings.Split(file, "//")
+		file := strings.ReplaceAll(file, "//", "/")
+		split := strings.Split(file, "/")
 		filename := file
 		if len(split) > 1 {
-			filename = split[1]
+			filename = split[len(split)-2] + "/" + split[len(split)-1]
 		}
 
 		fmt.Println(file)
@@ -172,6 +198,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 
 		packetNumber += 1
 
+		bw.Flush()
 		bw.WriteByte(0x32)
 		binary.LittleEndian.PutUint16(bs, packetNumber)
 		bw.Write(bs)
@@ -206,7 +233,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 
 			bw.Write(bs)
 
-			pt.PacketHistory[packetNumber] = []byte(string(""))
+			pt.PacketHistory[packetNumber] = string("")
 			pt.Packet = packetNumber
 			totalPackets += 1
 			bw.Flush()
@@ -255,6 +282,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 
 		mHeaderClone.Write(bw)
 
+		bw.Flush()
 		bw.WriteByte(0x32)
 		binary.LittleEndian.PutUint16(bs, packetNumber)
 		bw.Write(bs)
@@ -285,7 +313,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 
 			bw.Write(bs)
 
-			pt.PacketHistory[packetNumber] = []byte{}
+			pt.PacketHistory[packetNumber] = ""
 			pt.Packet = packetNumber
 			totalPackets += 1
 			bw.Flush()
@@ -302,7 +330,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 	var rate float64
 
 	rate = (float64(totalData) / totalTime.Seconds()) / math.Pow(10, 6)
-	fmt.Println("total time ", totalTime, " in ", rate, " MB/s")
+	fmt.Println("total time ", totalTime, " in ", rate, " MB/s ", " bucket ", bucket.Rate())
 	fmt.Println("Totaldata ", totalData, " Multi ", m, totalPackets, "/", totalMultiPackets)
 
 	if statuscode == 200 {
@@ -329,13 +357,13 @@ func (m *Multicaster) Write(p []byte) (int, error) {
 	start := time.Now()
 	m.Pass.WriteByte(0x30)
 	binary.LittleEndian.PutUint16(m.PacketBuf, m.Packet)
-
+	//m.PacketHistory[m.Packet] = m.PacketBuf
 	m.Pass.Write(m.PacketBuf)
 	n, err := m.Pass.Write(p)
 	if err != nil {
 		return n, err
 	}
-	//pt.PacketHistory[m.Packet] = []byte(string(p))
+	pt.PacketHistory[m.Packet] = string(p[:n])
 	pt.Packet = m.Packet
 	m.Packet += 1
 	m.Pass.Flush()
@@ -344,6 +372,7 @@ func (m *Multicaster) Write(p []byte) (int, error) {
 	if m.rate > 50 {
 		time.Sleep(time.Microsecond * 10)
 	}
+	time.Sleep(time.Nanosecond * 50000)
 
 	return n, err
 }
@@ -470,37 +499,39 @@ func unpackMultiHeader(hdr *wire.Header, data []byte, version protocol.VersionNu
 }
 
 type PassThru struct {
-	*net.UDPConn
+	io.Writer
 	io.Reader
 	Packet        uint16
-	PacketHistory map[uint16][]byte
+	PacketHistory map[uint16]string
 	mu            sync.Mutex
 }
 
 func (pt *PassThru) retransmit(str *bufio.Writer, number uint16) {
 	pt.mu.Lock()
-	p := pt.PacketHistory[number]
-	fmt.Println("Retransmit ", number)
+	p := []byte(pt.PacketHistory[number])
+	pt.mu.Unlock()
 	//for i, p := range pt.PacketHistory {
-	if len(pt.PacketHistory[number]) > 0 {
+	if len(p) > 0 {
 		p[0] = 0x34
+		fmt.Println("Packet sent ", len(p))
 		str.Write(p)
 		str.Flush()
+	} else {
+		fmt.Println("Cant retransmit ", number)
 	}
-	pt.mu.Unlock()
 	//}
 }
 
+/*
 func (pt *PassThru) Write(p []byte) (int, error) {
 	//var err error
 	//pt.total += int64(len(p))
 	//fmt.Println("Read", p, "bytes for a total of", pt.total)
 	pt.mu.Lock()
-	n, err := pt.UDPConn.Write(p)
+	n, err := pt.Write(p)
 	if err == nil {
-		pt.PacketHistory[pt.Packet] = []byte(string(p))
+
 	}
-	pt.mu.Unlock()
 
 	return n, err
 }
@@ -514,6 +545,7 @@ func (pt *PassThru) Read(p []byte) (int, error) {
 	fmt.Println("received ", n)
 	return n, err
 }
+*/
 
 func Retransmit(str *bufio.Writer, number uint16) {
 
