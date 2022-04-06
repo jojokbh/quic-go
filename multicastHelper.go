@@ -61,7 +61,7 @@ func MultiCast(files chan string, conn *net.UDPConn, hclient *http.Client, addr 
 
 	totalPackets = 0
 	packetNumber = 0
-	packetHistory := make(map[uint16]string)
+	packetHistory := make(map[uint16][]byte)
 	var mu sync.Mutex
 	conn.SetWriteBuffer(1436)
 	bucket = ratelimit.NewBucketWithRate(700*1024, 700*1024)
@@ -169,6 +169,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 		if err != nil {
 			panic(err)
 		}
+		defer fileStat.Close()
 		info, err := fileStat.Stat()
 		if err != nil {
 			panic(err)
@@ -199,20 +200,21 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 		packetNumber += 1
 
 		bw.Flush()
-		bw.WriteByte(0x32)
-		binary.LittleEndian.PutUint16(bs, packetNumber)
-		bw.Write(bs)
-		for name, value := range header {
-			fmt.Printf("%v: %v\n", name, value)
-			for _, v := range value {
-				bw.Write([]byte(name))
-				bw.Write([]byte(": "))
-				bw.Write([]byte(v))
-				bw.Write([]byte("\r\n"))
+		for i := 0; i < 4; i++ {
+			bw.WriteByte(0x32)
+			binary.LittleEndian.PutUint16(bs, packetNumber)
+			bw.Write(bs)
+			for name, value := range header {
+				fmt.Printf("%v: %v\n", name, value)
+				for _, v := range value {
+					bw.Write([]byte(name))
+					bw.Write([]byte(": "))
+					bw.Write([]byte(v))
+					bw.Write([]byte("\r\n"))
+				}
 			}
+			bw.Flush()
 		}
-
-		bw.Flush()
 		multicaster := &Multicaster{bw, bs, packetNumber, 0, burstyLimiter}
 		m, err = copyBuffer(multicaster, fileStat, buf)
 		if err != nil {
@@ -233,7 +235,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 
 			bw.Write(bs)
 
-			pt.PacketHistory[packetNumber] = string("")
+			pt.PacketHistory[packetNumber] = []byte{}
 			pt.Packet = packetNumber
 			totalPackets += 1
 			bw.Flush()
@@ -313,7 +315,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 
 			bw.Write(bs)
 
-			pt.PacketHistory[packetNumber] = ""
+			pt.PacketHistory[packetNumber] = []byte{}
 			pt.Packet = packetNumber
 			totalPackets += 1
 			bw.Flush()
@@ -363,7 +365,7 @@ func (m *Multicaster) Write(p []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
-	pt.PacketHistory[m.Packet] = string(p[:n])
+	pt.PacketHistory[m.Packet] = p[:n]
 	pt.Packet = m.Packet
 	m.Packet += 1
 	m.Pass.Flush()
@@ -502,18 +504,20 @@ type PassThru struct {
 	io.Writer
 	io.Reader
 	Packet        uint16
-	PacketHistory map[uint16]string
+	PacketHistory map[uint16][]byte
 	mu            sync.Mutex
 }
 
 func (pt *PassThru) retransmit(str *bufio.Writer, number uint16) {
 	pt.mu.Lock()
-	p := []byte(pt.PacketHistory[number])
+	p := pt.PacketHistory[number]
 	pt.mu.Unlock()
 	//for i, p := range pt.PacketHistory {
 	if len(p) > 0 {
 		p[0] = 0x34
-		fmt.Println("Packet sent ", len(p))
+		packetNumberBytes := p[1:3]
+		packetNumber := binary.LittleEndian.Uint16(packetNumberBytes)
+		fmt.Println("Packet sent ", len(p), " ", packetNumber)
 		str.Write(p)
 		str.Flush()
 	} else {
