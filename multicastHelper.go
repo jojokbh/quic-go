@@ -159,7 +159,7 @@ func getTest(file string, bw *bufio.Writer, hclient *http.Client, addr net.Addr)
 	packetNumber += 1
 
 	//go func() {
-	size := 1 * 1436
+	size := 1 * 1000
 
 	buf := make([]byte, size)
 	if !strings.Contains(file, "https://") {
