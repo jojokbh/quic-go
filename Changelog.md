@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.30.2 (2022-04-17)
+
+- update before vegas
+
 ## v0.22.0 (2021-07-25)
 
 - Use `ReadBatch` to read multiple UDP packets from the socket with a single syscall
