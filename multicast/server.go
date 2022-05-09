@@ -1,7 +1,6 @@
 package multicast
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -19,6 +18,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/jojokbh/quic-go"
 	"github.com/jojokbh/quic-go/http3"
@@ -693,7 +693,7 @@ func (s *MulticastServer) serveImpl(tlsConf *tls.Config, conn *net.UDPConn, ackC
 	if s.EnableDatagrams {
 		quicConf.EnableDatagrams = true
 	}
-	ackConn.SetWriteBuffer(1436)
+
 	if ackConn == nil {
 		fmt.Println("Conn nil ")
 		ln, err = quicListenAddr(s.multiAddr, baseConf, quicConf)
@@ -709,13 +709,15 @@ func (s *MulticastServer) serveImpl(tlsConf *tls.Config, conn *net.UDPConn, ackC
 
 	for {
 
-		sess, err := ln.Accept(context.Background())
+		ctx := context.Background()
+		sess, err := ln.Accept(ctx)
 		if err != nil {
 			return err
 		}
-		fmt.Println("So far so good")
 
-		go s.handleACK(sess, ackConn)
+		fmt.Println("So far so good ", sess.RemoteAddr())
+
+		go s.handleACK(sess, ctx)
 		//go s.handleConn(sess)
 	}
 }
@@ -747,68 +749,59 @@ func (f *settingsFrame) Write(b *bytes.Buffer) {
 	}
 }
 
-func (s *MulticastServer) handleACK(sess quic.Session, ackConn *net.UDPConn) {
-
-	str, err := sess.OpenUniStream()
+func (s *MulticastServer) handleACK(sess quic.Session, ctx context.Context) {
+	str, err := sess.AcceptStream(ctx)
 	if err != nil {
-		s.logger.Debugf("Opening the control stream failed.")
-		return
+		fmt.Println("#1", err)
 	}
+	str.SetDeadline(time.Time{})
+
+	fmt.Println("Handle ack ", str.StreamID())
+
+	fmt.Println("id ", str.StreamID())
 	buf := &bytes.Buffer{}
 	quicvarint.Write(buf, streamTypeControlStream) // stream type
 	(&settingsFrame{Datagram: s.EnableDatagrams}).Write(buf)
 	n, err := str.Write(buf.Bytes())
-	fmt.Println("n ", n, " err ", err)
+	fmt.Println("wrote ", n, " e ", err)
+	//str.Write([]byte("welcome"))
+
+	go func() {
+		time.Sleep(time.Second * 2)
+		n, err = str.Write([]byte("what the dank"))
+		if err != nil {
+			log.Panic("#2 ", err)
+		}
+		fmt.Println("wrote ", n)
+	}()
 
 	ackbuf := make([]byte, 1439)
 
-	fmt.Println("HandleACK")
 	for {
-		stream, err := sess.AcceptStream(context.Background())
+		r, err := str.Read(ackbuf)
 		if err != nil {
+			fmt.Println("#1 ", err)
 			//s.handleACK(sess, ackConn)
-			fmt.Errorf("\nError stream %v", err)
 			return
-		} else {
-			fmt.Println("herre")
 		}
-		buf := make([]byte, 1439)
-		binary.LittleEndian.PutUint16(buf, 0)
-		bw := bufio.NewWriter(stream)
+		log.Println("Read from ack ", r)
 
-		go func() {
-			n, err := bw.Write([]byte("Welcome"))
-			if err != nil {
-				fmt.Println("Stream write err  ", err)
+		if ackbuf[0] == 0x35 || ackbuf[0]&0x35 == 0 {
+			str.Write([]byte{0x36})
 
+		}
+		if ackbuf[0] == 0x33 && len(ackbuf) > 1 {
+
+			for i := 1; i < len(ackbuf[1:r]); i += 2 {
+				packetNumber := binary.LittleEndian.Uint16(ackbuf[i : i+2])
+				quic.Retransmit(str, packetNumber)
 			}
-			bw.Flush()
-			fmt.Println("Stream open ", n)
 
-			for {
-				r, err := stream.Read(ackbuf)
-				if err != nil {
-					fmt.Println(err)
-					//s.handleACK(sess, ackConn)
-					return
-				}
-				if ackbuf[0] == 0x35 || ackbuf[0]&0x35 == 0 {
-					bw.WriteByte(0x36)
-					bw.Flush()
-				}
-				if ackbuf[0] == 0x33 && len(ackbuf) > 1 {
-
-					for i := 1; i < len(ackbuf[1:r]); i += 2 {
-						packetNumber := binary.LittleEndian.Uint16(ackbuf[i : i+2])
-						quic.Retransmit(bw, packetNumber)
-					}
-
-				} else {
-
-				}
-			}
-		}()
+		} else {
+			//fmt.Println(string(ackbuf))
+		}
 	}
+
 }
 
 func (s *MulticastServer) multiCast(conn *net.UDPConn, files chan string) {
