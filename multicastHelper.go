@@ -380,7 +380,7 @@ func (m *Multicaster) Write(p []byte) (int, error) {
 	return n, err
 }
 
-//Buffer from io.Copy
+// Buffer from io.Copy
 func copyBuffer(dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
 	if buf == nil {
 		size := 32 * 1024
